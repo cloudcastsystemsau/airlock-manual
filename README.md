@@ -1,13 +1,22 @@
 # Airlock User Manual
 
-**Airlock** is a broadcast delay server. It receives a live programme feed over
-NDI, buffers it for a configurable delay window, and re-transmits it — giving
-master control a window in which offending content can be **dumped** before it
-goes to air. Alongside the video delay it provides audio-only profanity delay
-channels (ASIO/ALSA hardware), SCTE ad-break triggering, an optional SRT/H.264
-contribution encoder with audio processing, Axia Livewire GPIO panel
-integration, delayed data routing, alerting, primary/backup redundancy, and a
-runtime scripting engine — all managed from a web console.
+**Airlock** is a broadcast delay platform for video and audio. A delay
+channel buffers a live programme feed for a configurable window and
+re-transmits it — giving master control the time to **dump** or **censor**
+offending content before it goes to air.
+
+- **Video delay channels** ride NDI: the feed arrives over the network, is
+  delayed, and is re-sent as a new NDI source — with SCTE ad-break
+  triggering, pre/post censor, per-channel audio processing, and an optional
+  SRT/H.264 contribution encoder.
+- **Audio delay channels** are broadcast profanity delays on professional
+  sound hardware (ASIO on Windows — e.g. the Axia IP-Audio driver — or ALSA
+  on Linux), with cough and censor controls, dayparted fill, a post-censor
+  output and a mix-minus studio return.
+
+Around both kinds sit Axia Livewire GPIO panel integration, delayed data
+routing, alerting, primary/backup redundancy, and a runtime scripting
+engine — all managed from one web console.
 
 This manual covers day-to-day operation and administration. For deployment
 architecture and design rationale see `docs/` in the source tree; for the
@@ -19,19 +28,28 @@ scripting API see [docs/scripting-guide.md](../scripting-guide.md).
 
 1. [Core concepts](#1-core-concepts)
 2. [Getting started](#2-getting-started)
+   - [Installing](#installing) · [First sign-in](#first-sign-in) · [The console at a glance](#the-console-at-a-glance)
 3. [Operations dashboard and the Video console](#3-operations-dashboard-and-the-video-console)
+   - [The view-only dashboard](#operations--the-view-only-dashboard) · [The video console](#video--delay-channels--the-video-console) · [Adding, disabling and deleting channels](#adding-disabling-and-deleting-channels-admin)
 4. [Operating the delay](#4-operating-the-delay)
+   - [Build](#build) · [Delayed — the protection window](#delayed--the-protection-window) · [**Censor — bleep without dumping**](#censor--bleep-without-dumping) · [Simulating source loss](#simulating-source-loss-engine-sim)
 5. [Channel configuration](#5-channel-configuration)
+   - [Source & name](#source--name) · [Fill + dayparted schedule](#fill--static-assignment-and-dayparted-schedule) · [Delay mode](#delay-mode) · [Censor parameters](#censor-parameters) · [Feed stats](#feed-stats) · [Audio processing](#channel-audio-processing-trim--eq--compressor)
 6. [DUMP alerts, clips and alert groups](#6-dump-alerts-clips-and-alert-groups)
 7. [Fill assets](#7-fill-assets)
 8. [The encode option (SRT/SCTE-35)](#8-the-encode-option-srtscte-35)
 9. [Audio profanity delay](#9-audio-profanity-delay)
+   - [The command set](#the-command-set) · [Configure — device, delay and censor tabs](#configure--device-delay-and-censor-tabs) · [Fills and dayparted schedules](#fills-and-dayparted-schedules) · [Post-delay cough/censor](#post-delay-coughcensor)
 10. [Axia Livewire GPIO](#10-axia-livewire-gpio)
 11. [Data receivers and delayed data](#11-data-receivers-and-delayed-data)
 12. [Scripting](#12-scripting)
+    - [Persistent variables](#persistent-variables)
 13. [Server administration](#13-server-administration)
+    - [General](#131-general-settings-server--general) · [Email](#132-email-server--email-smtp) · [Authentication](#133-authentication-server--authentication) ([Entra ID example](#worked-example--microsoft-entra-id-azure) · [Google Workspace example](#worked-example--google-workspace)) · [Users](#134-users-server--users) · [Audit and backup](#135-audit-and-backup) · [Watchdog](#136-watchdog) · [**Redundancy**](#137-redundancy-primarybackup) · [**API access**](#138-api-access-server--api-access)
 14. [Licensing](#14-licensing)
+    - [What a licence grants](#what-a-licence-grants) · [Activation paths](#activation-paths) · [The daily check and offline allowance](#staying-licensed-the-daily-check-and-the-offline-allowance) · [What unlicensed means](#what-unlicensed--invalid-actually-means) · [Seats](#seats)
 15. [Remote control: TCP protocol and REST](#15-remote-control-tcp-protocol-and-rest)
+    - [TCP control](#tcp-control-automation-lan) · [REST, OAuth2 and Swagger](#rest-oauth2-and-swagger)
 16. [Roles and permissions](#16-roles-and-permissions)
 17. [Alarms and troubleshooting](#17-alarms-and-troubleshooting)
 
@@ -39,15 +57,20 @@ scripting API see [docs/scripting-guide.md](../scripting-guide.md).
 
 ## 1. Core concepts
 
-A **channel** is one delay path. Channels come in two kinds:
+A **channel** is one delay path. A server runs any mix of the two kinds,
+subject to licence seats:
 
 - **Video channels** receive an NDI source (`<source> → Airlock <name>`) and
-  re-send it, delayed, under the NDI name `Airlock <name>`.
+  re-send it, delayed, under the NDI name `Airlock <name>`. They are operated
+  from the Video console (§§3–5).
 - **Audio channels** are profanity delays on a sound-card pair (ASIO on
-  Windows — e.g. the Axia IP-Audio driver — or ALSA on Linux), covered in
+  Windows — e.g. the Axia IP-Audio driver — or ALSA on Linux). They have
+  their own state machine (Idle → Building → InDelay → Exiting), command set
+  (Build / Dump / Dump all / Exit / Cough / Censor) and console page — all in
   [§9](#9-audio-profanity-delay).
 
-A video channel is always in one of four states:
+The rest of this section describes the video channel model. A video channel
+is always in one of four states:
 
 | State | Badge colour | Meaning |
 |---|---|---|
@@ -73,30 +96,40 @@ Two behaviours worth knowing before you operate:
   Airlock self-paces and **holds the last good frame** (raising
   `ALARM_SOURCE_LOST`) so downstream receivers never unlock, and resumes
   cleanly when the source returns.
-- **Watermarking, not blocking**: channels that don't hold a licence seat
-  still run, but their output is watermarked ([§14](#14-licensing)) — burnt-in
-  video marks plus periodic audio tones. ROLLOUT and DUMP are never gated;
-  they are always allowed as exits.
+- **Watermarking, not blocking**: licensing never blocks the delay. Channels
+  without a licence seat (including every channel on an unlicensed server)
+  build and run normally — their output simply carries a burnt-in watermark
+  and audio tones ([§14](#14-licensing)). BUILD, ROLLOUT and DUMP are never
+  licence-refused.
 
 ## 2. Getting started
 
 ### Requirements
 
-- The **NDI runtime** on the server (without it the server runs in ENGINE-SIM,
-  a synthetic demo mode; the footer shows which).
-- **ffmpeg/ffprobe** for fill conforming, previews and dump-clip transcoding
-  (`FFPROBE_PATH` / `FFMPEG_PATH` if not on PATH; the footer and the Fills page
-  warn when missing).
-- A disciplined host clock (NTP/PTP) — audit timestamps and outgoing timecode
-  depend on it.
+- For **video channels**: the **NDI runtime** on the server (without it video
+  channels run in ENGINE-SIM, a synthetic demo mode; the footer shows which),
+  and **ffmpeg/ffprobe** for fill conforming, previews and dump-clip
+  transcoding (`FFPROBE_PATH` / `FFMPEG_PATH` if not on PATH; the footer and
+  the Fills page warn when missing).
+- For **audio channels**: a professional sound device — an **ASIO** driver on
+  Windows (e.g. the Axia IP-Audio driver) or **ALSA** on Linux — with enough
+  channels for the main pair plus any post-censor and mix-minus return pairs.
+  The `sim` backend needs no hardware (demo/test).
+- A disciplined host clock (NTP/PTP) — audit timestamps, outgoing timecode
+  and dayparted schedules depend on it.
 
 ### Installing
 
 On Windows, the MSI installer sets Airlock up as a **Windows service**: the
-installer asks for the web console port (default **8080**; unattended installs
-can pass `WEBPORT=n` to `msiexec /qn`), opens firewall rules for that port and
-for TCP control (9350), and anchors the database and logs to
-`%ProgramData%\Airlock`. Development/console runs (`dotnet run`) serve on
+installer's Configuration page asks for the web console port (default
+**8080**) and, optionally, a **licence serial** (leave blank to evaluate —
+unlicensed servers run fully functional with watermarked outputs,
+[§14](#14-licensing)); unattended installs can pass `WEBPORT=n SERIAL=XXXX`
+to `msiexec /qn`. The installer opens firewall rules for the web port and for TCP
+control (9350) and anchors the database and logs to `%ProgramData%\Airlock`.
+A supplied serial is activated online at the service's first start (with a
+daily retry while the licensing server is unreachable), so offline installs
+still complete. Development/console runs (`dotnet run`) serve on
 `http://localhost:5000` by default and keep their data beside the executable
 unless `--DataDir` says otherwise.
 
@@ -110,7 +143,7 @@ via **Account → Change password**.
 ![Login page](img/01-login.png)
 
 Sign-in is rate-limited to 5 attempts per minute per IP. When LDAP or OIDC SSO
-is configured ([§13.2](#132-external-authentication--ldap--oidc)), directory
+is configured ([§13.3](#133-authentication-server--authentication)), directory
 accounts sign in on this same form (LDAP) or via the SSO button; the internal
 login always remains available as break-glass.
 
@@ -124,14 +157,14 @@ login always remains available as break-glass.
   - *Data Receivers* — TCP Servers, TCP Clients, UDP Servers, Routing,
     Axia GPIO;
   - *Scripting* (admin);
-  - *Server* (admin) — **Settings & SMTP**, **Alert groups**, **License**,
-    **Redundancy**;
+  - *Server* (admin) — **General**, **Email (SMTP)**, **Authentication**,
+    **Users**, **Alert groups**, **License**, **Redundancy**, **API access**;
   - *Account* — Change password, Sign out.
 - **Banners** (under the header): an amber/red **licence** banner while the
   licence needs attention (admins get a *Manage license* link); an amber/red
   **redundancy** banner on a backup that has lost its master (or been taken
   over); a sky-blue note on a synced backup — *"Backup — configuration and
-  controls are managed by the master at <host>"* ([§13.6](#136-redundancy-primarybackup)).
+  controls are managed by the master at <host>"* ([§13.7](#137-redundancy-primarybackup)).
 - **Footer status pills**: NDI runtime, media tooling (ffmpeg), watchdog
   state, licence state — plus a **Redundancy** pill (`Redundancy: primary` /
   `Redundancy: backup Synced` …) when a redundancy role is configured.
@@ -159,15 +192,17 @@ card.
 
 The control surface lives on **Video → Delay channels**: the full channel
 cards with transport buttons, plus the admin **+ Add channel** control in the
-page header.
+page header. Video views show video channels only — audio delays live
+entirely under the Audio menu (which has its own **+ Add channel**, pre-set to
+the audio kind).
 
 ![Video delay channels](img/03-video-channels.png)
 
 Reading a card, top to bottom:
 
 - **Header** — channel name; engine badge (`NDI delay engine`, or `engine-sim`
-  without the NDI runtime); the licence-seat pill (`licensed`, or an amber
-  **UNLICENSED** button — see [§14](#14-licensing)); the **state badge**; the
+  without the NDI runtime); the licence-seat pill (grey `licensed`, or an
+  amber **UNLICENSED** button — see [§14](#14-licensing)); the **state badge**; the
   **Encode** pill ([§8](#8-the-encode-option-srtscte-35)); the **sliders icon**
   that opens audio processing ([§5](#5-channel-configuration)); and the gear
   that opens channel settings.
@@ -247,6 +282,36 @@ In **Delayed** the operator can:
   emits SCTE-104 in the NDI output's VANC **and** (if the encoder runs)
   PTS-aligned SCTE-35 in the transport stream, with pre-roll.
 
+### Censor — bleep without dumping
+
+Sometimes a word needs to go but the pictures don't: video channels carry the
+profanity-delay **censor**, which replaces a span of the **programme audio**
+with tone (or silence) while the **video passes through untouched** — no
+buffer is lost, unlike Dump. Two controls sit beside the transport buttons:
+
+![Video censor engaged](img/51-video-censor-active.png)
+
+- **Censor** — a hold: click to open, click again to release (the button
+  reads **Censor ●** and pulses while engaged). The censored span is
+  **back-dated** — a press marks from *censor size + pre pad* **before** the
+  moment you pressed, so operator reaction time is covered — and holds *post
+  pad* past the release to cover pulling off early. On a delayed channel the
+  tone airs when those frames reach the output (the protection rides the
+  delay); pressed while Live it applies immediately. Repeated or held presses
+  extend one merged span.
+- **Post censor** — replaces the **on-air output audio immediately** while
+  engaged, regardless of delay depth — the last-ditch control when something
+  is already at the output tap.
+- **Force off** — appears while anything is engaged; clears every censor
+  state, including marked spans that haven't aired yet.
+
+Censor works in every channel state and is never licence-gated. The
+`censorActive` / `postCensorActive` GPO lamp sources follow these controls
+([§10](#10-axia-livewire-gpio)), and a **hold timeout** (default 30 s,
+configurable per channel) auto-releases a censor whose release edge never
+arrives — a GPI button whose "off" was lost in a dropped connection can't
+leave the bleep latched on air.
+
 ### Simulating source loss (engine-sim)
 
 Without the NDI runtime, channels run against a synthetic source and admins
@@ -258,10 +323,14 @@ effect — hold-last-frame plus `ALARM_SOURCE_LOST`:
 
 ## 5. Channel configuration
 
-Open the gear on a channel card (changes require the **admin** role; source,
-fill and delay-mode changes are only permitted while the channel is **Live**):
+Open the gear on a channel card. The settings modal is tabbed — **Source &
+name · Fill · Delay mode · Censor · Feed stats**. Changes require the
+**admin** role (Feed stats is visible to everyone); source, fill and
+delay-mode changes are only permitted while the channel is **Live**.
 
-![Channel settings](img/04-channel-settings.png)
+![Channel settings — Source & name](img/04-channel-settings.png)
+
+### Source & name
 
 - **Name** — rename the channel (letters/digits/space/`- _ .`, max 24). The
   NDI output name (`Airlock <name>`) follows at the next engine restart.
@@ -270,24 +339,79 @@ fill and delay-mode changes are only permitted while the channel is **Live**):
   generator (SMPTE-style bars, bouncing Airlock mark, 1 kHz −18 dBFS tone)
   that switches on and binds in one click and persists across restarts. Handy
   for commissioning and the screenshots in this manual.
-- **Fill** — one of the *ready* fill assets ([§7](#7-fill-assets)) or
-  **"Freeze frame (no fill — delay to time)"** to build against a freeze of
-  the last live frame instead of playing fill.
-- **Delay mode**:
-  - **Delay to asset** — the delay window equals the fill's full length (a
-    20 s fill gives a 20 s delay).
-  - **Delay to time** — a fixed window in seconds (0.25 s steps, capped at
-    min(channel max depth, global cap — shown as "cap Ns")). A longer fill is
-    cut short at the window; a shorter fill either **loops** (checkbox) or
-    plays once and freezes its last frame, silent, until the window is
-    reached.
-  - Changes **Apply** while Live and take effect at the next Build.
 - **DUMP email alerts** — tick the alert groups to notify on DUMP
   ([§6](#6-dump-alerts-clips-and-alert-groups)).
 - **Disable channel (release resources)** — see [§3](#3-operations-dashboard-and-the-video-console).
 
-A fill must fit the channel's maximum delay depth — the server refuses an
+### Fill — static assignment and dayparted schedule
+
+The static **Fill** picker offers the *ready* fill assets
+([§7](#7-fill-assets)) or **"Freeze frame (no fill — delay to time)"** to
+build against a freeze of the last live frame instead of playing fill. A fill
+must fit the channel's maximum delay depth — the server refuses an
 over-length assignment rather than risk the buffer.
+
+Below it, the **Dayparted fill schedule** swaps the effective fill by time of
+day and day of week — e.g. a breakfast slate on weekday mornings, the station
+default otherwise:
+
+![Fill tab with dayparted schedule](img/45-channel-fill-schedule.png)
+
+- Each row is *fill × days × HH:MM–HH:MM window*. While an enabled row's
+  window matches the current server time, that row's asset is the channel's
+  effective fill; a green **"active now: <fill>"** pill shows which one won.
+- Overlapping rows: the **first matching row wins** (deterministic — unlike
+  the audio fill schedules, which round-robin per build). When no row
+  matches, the **static assignment returns**.
+- Boundary changes apply **only while the channel is Live** (the fill is a
+  standing assignment the engine conforms once, not a per-build pick). A
+  crossing that happens mid-delay is retried and lands when the channel next
+  returns to Live.
+
+### Delay mode
+
+- **Delay to asset** — the delay window equals the fill's full length (a
+  20 s fill gives a 20 s delay).
+- **Delay to time** — a fixed window in seconds (0.25 s steps, capped at
+  min(channel max depth, global cap — shown as "cap Ns")). A longer fill is
+  cut short at the window; a shorter fill either **loops** (checkbox) or
+  plays once and freezes its last frame, silent, until the window is
+  reached.
+- Changes **Apply** while Live and take effect at the next Build.
+
+### Censor parameters
+
+The Censor tab tunes the reaction-time compensation behind the card's Censor
+buttons ([§4](#4-operating-the-delay)):
+
+![Censor tab](img/50-video-censor-tab.png)
+
+- **Replace audio with** — `tone (bleep)` or `silence`; **Tone (Hz)** and
+  **Tone level (0–1)** shape the bleep.
+- **Censor size (ms)** — the base span *ending at the press* (the
+  reaction-time back-date; default 500).
+- **Pre pad (ms)** — extra lead-in before the base span (default 300).
+- **Post pad (ms)** — held past the release, covering pulling off early
+  (default 300).
+- **Hold timeout (ms, 0 = off)** — auto-release a censor whose off never
+  arrives (default 30000).
+
+### Feed stats
+
+A read-only reference for the bound feed — useful when confirming what an
+upstream source is actually delivering:
+
+![Feed stats](img/46-feed-stats.png)
+
+- **Incoming feed**: source name, signal state (● receiving / ● lost),
+  resolution, frame rate (fractional rates shown with their num/den, e.g.
+  "29.97 fps (30000/1001)"), scan, pixel format (FourCC), aspect, frames
+  received.
+- **Outgoing feed**: the NDI output name, the re-sent format, frames sent,
+  drops, hold repeats and the current delay depth.
+- The format is **locked from the source's first frame at bind** and re-locks
+  when the source or engine restarts; the output is re-sent at the same
+  raster.
 
 ### Channel audio processing (trim · EQ · compressor)
 
@@ -350,8 +474,11 @@ audio channels and size.
 
 ![Fill preview](img/25-fill-preview.png)
 
-A fill assigned to a channel cannot be deleted (the delete is refused with a
-clear error) — unassign it first.
+A fill cannot be deleted while a channel's static assignment **or any
+channel's fill schedule** references it — the refusal names the blocking
+channels so you know exactly where to unassign:
+
+![Fill delete blocked](img/48-fill-delete-blocked.png)
 
 ## 8. The encode option (SRT/SCTE-35)
 
@@ -393,7 +520,8 @@ raises/clears `ALARM_ENCODE_DOWN`.
 **Video → Encoders** shows one card per enabled encoder with a live output
 preview (the watermark is visible on unlicensed feeds), loudness/A-V/drops/
 SCTE stats, its **licence seat** state, and Assign/Release seat buttons
-(admin). The Operations dashboard mirrors these as read-only tiles.
+(admin); the **cog in the card header** opens the Encode modal. The
+Operations dashboard mirrors these as read-only tiles.
 
 ![Encoders page](img/14-encoders-page.png)
 
@@ -414,6 +542,8 @@ summary, IN/OUT level meters, and the command row:
 
 ![Audio channel building](img/17-audio-indelay.png)
 
+### The command set
+
 | Command | Effect |
 |---|---|
 | **Build** | Start building the delay (Idle only). |
@@ -423,18 +553,46 @@ summary, IN/OUT level meters, and the command row:
 | **Cough** | Momentary kill/re-arm. |
 | **Censor** | Overwrite the about-to-air span with tone/silence/file — depth is *unchanged* (nothing is removed, unlike Dump); repeated presses extend the region; a configurable pre/post bracket widens it. |
 
-**Configure** opens a four-tab modal:
+Held cough/censor (from GPI or the API's on/off pairs) carries the same
+stuck-on protection as the video censor: level reconciliation corrects a
+lost release edge, and the hold timeout auto-releases a censor whose off
+never arrives. Video channels have their own censor with the same model —
+see [§4](#4-operating-the-delay).
+
+Below the meters, **Monitor pre / Monitor post** listen to the channel in the
+browser — *pre* is the input as captured, *post* is the delayed on-air output
+(same Opus/WebSocket mechanism as the video cards; listen-only, so every role
+gets it).
+
+### Configure — device, delay and censor tabs
+
+The **cog** in the card header opens the four-tab Configure modal (admins can
+also **rename** the channel at the top of it). Configuration changes
+**hot-apply to the running delay** — saving no longer interrupts audio or
+resets the depth; only device/topology changes (backend, device, channel
+assignments, sample format, growing the delay beyond the allocated ring, or
+assets the child didn't start with) restart the child, and the restart reason
+is logged.
 
 ![Audio configure — Device tab](img/18-audio-config-device.png)
 
 - **Device** — backend `asio` (Windows; e.g. the Axia IP-Audio driver),
-  `alsa` (Linux) or `sim` (no hardware — demo/test); device name; optional
-  post-censor offset (an extra-delayed clean output on the pair above the
-  main pair).
+  `alsa` (Linux) or `sim` (no hardware — demo/test). With ASIO, a **Device**
+  dropdown lists the installed drivers and **Main input / Main output** offer
+  the driver's *named channel pairs* (Axia Livewire source names collapse to
+  one entry, e.g. `1–2 · Livewire 1`); alsa/sim fall back to numeric channel
+  offsets. Optional **post-censor offset** (an extra-delayed clean output on
+  the pair above the main pair) and **Rollout return channel** (the mix-minus
+  return pair — see below).
 - **Delay & build** — delay size (ms), build/exit rates (%), exit mode
   (`compress`/`rollout`), build mode (`expand` = stretch live, `insert` =
   play fill), fill strategy (`squeeze` = time-stretch the asset to exactly
-  the build window, or `silent`), default fill asset.
+  the build window, or `silent`), default fill asset. With exit mode
+  `rollout`, **Rollout mix-minus return** + **Return overlap (ms)** enable a
+  separate **studio return output** during rollout: the retiring delay buffer
+  drains onto the return pair *minus the live input* (N-1), so the presenter
+  hears the tail of the delayed programme without hearing themselves — the
+  main output still takes the clean jump cut.
 
   ![Delay & build tab](img/19-audio-config-delay.png)
 
@@ -504,23 +662,35 @@ stale):
 
 ![Live GPIO](img/31-gpio-live.png)
 
-**Mappings** (admin) — the wiring between pins and channels:
+**Mappings** (admin) — the wiring between pins and channels. Both tables
+lead with a **Live** lamp per row (green glow = active, dim = inactive,
+hollow ring = no live state — device unconfirmed or a momentary event
+source), so you can watch a mapping fire without leaving the page. The
+channel pickers are grouped into video/audio, and the command/source lists
+only offer what the selected channel's kind supports (the server refuses a
+mismatch outright):
 
 ![GPIO mappings](img/32-gpio-mappings.png)
 
 - **GPI → channel control** (stackable): device/port/pin → channel + command.
-  Video commands `build | rollout | dump | trigger(adbreak)`; audio commands
-  `dumpall | exit | exitcompress | exitrollout | cough | censor |
-  forcecensoroff | coughpost | censorpost`; and **delayed relays**
-  `pulse1..10` / `static1..10` — a contact closure that re-emerges on a
-  matching GPO source *delayed by the channel's current depth*, in sync with
-  the delayed programme (DUMP cancels relays in the discarded span).
+  Video commands `build | rollout | dump | trigger(adbreak) | censor |
+  censorpost | forcecensoroff`; audio commands `build | dump | dumpall |
+  exit | exitcompress | exitrollout | cough | censor | forcecensoroff |
+  coughpost | censorpost`; and **delayed relays** `pulse1..10` /
+  `static1..10` — a contact closure that re-emerges on a matching GPO source
+  *delayed by the channel's current depth*, in sync with the delayed
+  programme (DUMP cancels relays in the discarded span).
   Trigger edge: falling (default — momentary active-low is the broadcast
   norm, and means reconnects can never replay commands), rising, level
   high/low, or **held (on/off)** — the command is active while the pin is
-  held and releases with it (offered for cough/censor and required for
-  coughpost/censorpost). Adding a device offers a default template: port *n*
-  pins 1–4 = channel *n* Build / Rollout / Dump / Trigger.
+  held and releases with it (offered for the cough/censor family; the
+  post-output pairs are held-only). Held mappings are **level-reconciled**:
+  the resolver fires whenever the pin's confirmed level disagrees with the
+  last state it commanded, so a release edge lost to a dropped connection is
+  corrected from the reconnect's seed indication instead of leaving a censor
+  latched on — with the per-channel hold timeout as the final safety net.
+  Adding a device offers a default template: port *n* pins 1–4 = channel *n*
+  Build / Rollout / Dump / Trigger.
 - **GPO ← channel status** (one enabled mapping owns each pin):
   - level sources — `inDelay` (the canonical "we are delaying" lamp —
     Building ∪ Delayed ∪ RollingOut), `stateBuilding` / `stateDelayed` /
@@ -572,6 +742,12 @@ content's metadata never leaks:
 Incoming data can also fire scripts (`dataReceived`, `dataClientEvent`,
 `dataDelayed` triggers — [§12](#12-scripting)).
 
+**Unlicensed servers**: each enabled data receiver runs for **30 minutes at a
+stretch**, then is disabled (audited as `RECEIVER_UNLICENSED_TIMEOUT`, with an
+alert email). Re-enabling it grants another 30 minutes; activating a licence
+lifts the limit entirely. An amber banner on the panel states exactly this
+while the server is unlicensed ([§14](#14-licensing)).
+
 ## 12. Scripting
 
 The **Scripting** view (admin only) hosts runtime automation scripts in
@@ -590,10 +766,72 @@ binds a script to a **trigger**: `manual`, `startup`/`shutdown`,
 `channelEvent` (EnteredBuilding/EnteredDelayed/EnteredRollingOut/
 ReturnedToLive/Dumped, optionally scoped to a channel), `audioEvent`,
 `encoderEvent`, `gpi`, `timer`, `schedule` (cron), or the data triggers.
-**Validate** checks the script; **Save version** creates an immutable
-version, and the history chips (v1, v2, …) activate/roll back:
+The **Examples** dropdown inserts a worked, compile-tested starting point
+per language — timer + persistent counter, cron schedule, delay status
+watchdog, GPI dump-all, parsing JSON/XML/binary payloads from data
+receivers (also collected in
+[docs/scripting-examples.md](../scripting-examples.md)).
 
 ![Script editor](img/35-script-editor.png)
+
+**Validate** checks the script; **Save version** creates an immutable
+version, with an optional **commit message** stored against it. Clicking a
+history chip (v1, v2, …) opens a read-only **side-by-side diff** of any two
+versions — rollback is inspect-then-activate via the **Activate vN** button
+in the diff header:
+
+![Script version compare](img/44-script-compare.png)
+
+### Persistent variables
+
+Scripts have no memory between runs by design (each invocation is a fresh,
+~1-second-budget call). **Persistent variables** are the sanctioned way to
+carry state: a single key/value store that is
+
+- **shared by all scripts in all three languages** — one flat namespace, so a
+  Lua script's counter is readable by a JavaScript script (adopt a naming
+  convention like `heartbeat.count` to keep things tidy);
+- **persistent** — the values are database rows, so they survive script
+  edits, disables and full server restarts;
+- **replicated** — on a redundancy pair the store syncs to the backup, so a
+  takeover keeps your state.
+
+The host API (Lua uses colon syntax, JS/C# dot/bare):
+
+| Call | Returns |
+|---|---|
+| `air:GetVar("name")` | the value as a string, or nil/null when absent |
+| `air:SetVar("name", value)` | — (creates or overwrites) |
+| `air:GetNumber("name")` | the value parsed as a number, or nil/null when absent **or unparseable** |
+| `air:GetBool("name")` | true/false (accepts `true/false`, `1/0`, `yes/no`, `on/off`), else nil/null |
+| `air:DeleteVar("name")` | — (no-op when absent) |
+
+The typed getters return nil rather than throwing, so defaults compose
+naturally:
+
+```lua
+-- Bind with trigger "timer" (e.g. every 5000 ms).
+function main(trigger, channel, event, args)
+  local n = (air:GetNumber("heartbeat.count") or 0) + 1
+  air:SetVar("heartbeat.count", tostring(n))
+  air:Log("info", "tick " .. n .. " — video ch1 is " .. air:State(1))
+end
+```
+
+Values are always **stored and transported as text** — the *type* column in
+the UI (string · number · bool · json) is a validation hint for the editing
+form, not a storage format. Every write is audited: script writes as
+`SCRIPTVAR_SET` with source `script` and the script's name as principal,
+console/REST writes with source `rest` and the signed-in user. Reads are not
+audited.
+
+The **Variables** button on the Scripting page opens the store for
+inspection and editing (admin) — add/update with per-type validation, edit
+or delete any row, see when each was last written. The script editor
+autocompletes existing variable names whenever the cursor is inside the
+string argument of `GetVar`/`SetVar`/`GetNumber`/`GetBool`/`DeleteVar`:
+
+![Persistent variables](img/43-script-variables.png)
 
 The host API covers channel transport and status, audio-delay commands,
 encoder control, SCTE triggers, GPIO, persistent variables, logging and
@@ -602,27 +840,37 @@ invocation has a 1 s timeout. Lua and JavaScript are sandboxed; **C# runs
 full-trust** — treat it like server-side code. Full reference and examples:
 [docs/scripting-guide.md](../scripting-guide.md).
 
+**Unlicensed servers**: each enabled script runs for **30 minutes at a
+stretch**, then is disabled (audited as `SCRIPT_UNLICENSED_TIMEOUT`, with an
+alert email). Re-enabling grants another 30 minutes; a licence lifts the
+limit ([§14](#14-licensing)). The Scripting panel shows an amber banner while
+the limit is in force.
+
 > Note the host-call syntax in Lua is colon-style: `air:Log(...)`,
 > `air:Build(1)` — while JavaScript and C# use dot-style (`air.Log(...)`).
 
 ## 13. Server administration
 
-### 13.1 Settings & SMTP (Server → Settings & SMTP)
+### 13.1 General settings (Server → General)
 
-![Server settings](img/36-server-settings.png)
+![General settings](img/36-server-settings.png)
 
 - **Max delay cap** — global ceiling in seconds (1–300; default 30). A
   channel's effective window is min(its own max, this cap).
 - **Public base URL** — the host used in alert-email clip links (empty =
   links omitted); also the base for the OIDC redirect URI.
 - **Data logs** — directory and retention (days) for data-receiver file logs.
-- **Alert email (SMTP)** — server, port, security (STARTTLS 587 / SSL 465 /
-  none), optional auth (password write-only), From address/name, and a
-  **Send test email** button. Used for DUMP alerts only.
 
-### 13.2 External authentication — LDAP / OIDC
+### 13.2 Email (Server → Email (SMTP))
 
-Same modal, lower sections; internal sign-in always remains as break-glass.
+Alert email for DUMP notifications (and system alerts such as licence and
+runtime-limit warnings): server, port, security (STARTTLS 587 / SSL 465 /
+none), optional auth (password write-only), From address/name, and a
+**Send test email** button.
+
+### 13.3 Authentication (Server → Authentication)
+
+External sign-in; the internal login always remains as break-glass.
 
 - **LDAP / Active Directory** — server/port + security (LDAPS/StartTLS/none),
   service bind DN + password, base DN, user filter (default
@@ -633,15 +881,126 @@ Same modal, lower sections; internal sign-in always remains as break-glass.
   label. Register the redirect URI `<public base URL>/api/auth/oidc/callback`
   with the IdP.
 
-### 13.3 Users
+How the OIDC pieces fit (applies to any provider): Airlock runs the standard
+authorization-code flow against the provider's discovery document
+(`<authority>/.well-known/openid-configuration`) and reads everything **from
+the ID token**. The signed-in username is the token's `preferred_username`
+claim, falling back to `email` then `sub`. Role mapping looks at every value
+of the configured **role claim** and applies the mapping lines in order —
+`role: value`, exact match (case-insensitive), **first match wins**; if
+nothing matches, the user gets the **default role**, or is refused when the
+default is "refuse unmapped users". Directory users appear under Server →
+Users after their first sign-in, re-deriving their role at every login
+unless an admin pins it ([§13.4](#134-users-server--users)).
 
-User management is API-only in this release (no UI screen):
-`GET/POST/DELETE /api/users` (admin) manages internal accounts; everyone can
-change their own password via **Account → Change password**.
+#### Worked example — Microsoft Entra ID (Azure)
+
+In the **Entra admin center** (entra.microsoft.com):
+
+1. **Identity → Applications → App registrations → New registration.** Name
+   it (e.g. "Airlock"), keep *Accounts in this organizational directory
+   only*, and under **Redirect URI** pick platform **Web** and enter exactly
+   the URI Airlock shows at the bottom of its Authentication panel:
+   `https://<public base URL>/api/auth/oidc/callback`.
+2. From the app's **Overview**, note the **Application (client) ID** and the
+   **Directory (tenant) ID**.
+3. **Certificates & secrets → New client secret** — copy the secret's
+   *Value* immediately (it is only shown once).
+4. **Token configuration → Add groups claim** → tick **Security groups** for
+   the **ID** token. Entra emits group **object IDs (GUIDs)**, not names —
+   copy each relevant group's Object ID from *Groups → your group →
+   Overview*. If your users belong to many groups, choose **"Groups assigned
+   to the application"** instead and assign just the Airlock-relevant groups
+   under *Enterprise applications → Airlock → Users and groups* — this keeps
+   the claim small (Entra drops the claim entirely for users in 200+ groups)
+   and doubles as an access list.
+
+In **Airlock (Server → Authentication → OIDC SSO)**:
+
+| Field | Value |
+|---|---|
+| Authority | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
+| Client ID / secret | from steps 2–3 |
+| Scopes | `openid profile email` (the default) |
+| Role claim | `groups` |
+| Role mappings | `admin: <object-id of your admins group>`<br>`operator: <object-id of your operators group>` — one per line |
+| Default role | `viewer`, or "refuse unmapped users" to admit only mapped groups |
+| Button label | e.g. `Microsoft` |
+
+![OIDC configured for Entra ID](img/49-auth-oidc-example.png)
+
+Users sign in with the login button and land under their UPN (Entra's
+`preferred_username`). If sign-in fails with "no role mapping matched",
+the group claim isn't reaching the ID token — re-check step 4 and that the
+user is in an assigned group.
+
+#### Worked example — Google Workspace
+
+Google's ID tokens **do not carry a groups claim**, so Workspace group
+membership can't drive roles directly — map on the `email` claim (or the
+`hd` hosted-domain claim) instead, and use the sticky role override in
+Server → Users for individual promotions.
+
+In the **Google Cloud console** (console.cloud.google.com), in any project:
+
+1. **APIs & Services → OAuth consent screen** — set User type **Internal**.
+   This restricts sign-in to accounts in your Workspace domain and is doing
+   real access control: with an *External* consent screen, any Google
+   account could sign in and would receive your default role.
+2. **APIs & Services → Credentials → Create credentials → OAuth client ID**
+   — application type **Web application**, and add the Airlock callback as
+   an **Authorised redirect URI**:
+   `https://<public base URL>/api/auth/oidc/callback`. Copy the client ID
+   and secret.
+
+In **Airlock (Server → Authentication → OIDC SSO)**:
+
+| Field | Value |
+|---|---|
+| Authority | `https://accounts.google.com` |
+| Client ID / secret | from step 2 |
+| Scopes | `openid profile email` (the default) |
+| Role claim | `email` |
+| Role mappings | `admin: dan@station.example`<br>`operator: mcr@station.example` — one line per person |
+| Default role | `viewer` (every Workspace user can watch), or "refuse unmapped users" |
+| Button label | e.g. `Google` |
+
+Users land under their email address. Two workable patterns for roles:
+
+- **Per-person mappings** (above) — explicit, auditable, but a list to
+  maintain.
+- **Domain default + pinned exceptions** — set role claim `hd` (Google's
+  hosted-domain claim) with a single mapping like
+  `operator: station.example` so everyone in the domain operates, then
+  promote the few admins via the **override** pin in Server → Users
+  ([§13.4](#134-users-server--users)); the pin survives every login.
+
+Whichever provider you use, the internal username/password login stays
+available as break-glass — an IdP outage can't lock you out of the console.
+
+### 13.4 Users (Server → Users)
+
+Full user management lives in the console:
+
+![Users panel](img/47-users.png)
+
+- **Local users** — create with username/password/role; change roles from the
+  per-row dropdown; delete. You cannot change your own role or delete your
+  own account. Everyone can change their own password via **Account →
+  Change password**.
+- **Directory users** (LDAP/OIDC) are provisioned automatically on first
+  sign-in, tagged with their source. Their role normally follows the
+  directory group mapping on every login — but an admin can **pin it**: set a
+  role from the dropdown and it becomes a sticky override (tagged
+  **override ✕**; the directory mapping is ignored until you click the ✕ to
+  hand the role back, which re-applies at the user's next login). Untouched
+  directory users show a grey **directory** tag.
+- Role changes are audited (`USER_ROLE_SET` / `USER_ROLE_MANAGED`) and users
+  replicate to redundancy backups.
 
 ![Change password](img/40-change-password.png)
 
-### 13.4 Audit and backup
+### 13.5 Audit and backup
 
 The audit log is append-only and viewable at the bottom of Operations (full
 history via `GET /api/audit?from&to&ch&skip&take`). A checkpointed copy of
@@ -650,7 +1009,7 @@ the configuration database can be downloaded by admins from
 
 ![Audit table](img/15-audit.png)
 
-### 13.5 Watchdog
+### 13.6 Watchdog
 
 A separate watchdog process monitors the server's heartbeat and can take over
 the NDI output names in a failover pair **on the same host**. Its state shows
@@ -659,7 +1018,7 @@ in the footer. **Fail-back is operator-confirmed by default**
 glitches live programming unannounced. For a second, geographically separate
 server, see Redundancy below — the two mechanisms are independent.
 
-### 13.6 Redundancy (primary/backup)
+### 13.7 Redundancy (primary/backup)
 
 **Server → Redundancy** configures a warm-standby pair: a **primary (master)**
 serves configuration, users and media to one or more **backups** over a
@@ -672,8 +1031,11 @@ assets mirror automatically.
 - **Roles** are gated by licence feature flags: only a licence carrying
   **PRIMARY** can serve backups, only one carrying **BACKUP** can join as a
   backup (the radios are greyed otherwise — the screenshot above shows a
-  standalone instance). Role and sync settings are admin;
-  takeover/rejoin are operator actions.
+  standalone instance). The role is also **enforced by the licence itself**:
+  running under a redundancy role the installed licence doesn't permit makes
+  the licence invalid until the role or the licence is corrected
+  ([§14](#14-licensing)). Role and sync settings are admin; takeover/rejoin
+  are operator actions.
 - A **synced backup is locked**: the whole console is read-only (buttons
   greyed, REST mutations refused, TCP verbs answer `ERR … LOCKED`), and its
   alert emails, GPO drives and data-route sends are suppressed so nothing
@@ -690,50 +1052,137 @@ assets mirror automatically.
   banners, and the panel's live status (with the primary's **Connected
   backups** table on the master).
 
+### 13.8 API access (Server → API access)
+
+External systems call the same REST API as the console, authenticating with
+the **OAuth2 client-credentials grant**. The API access panel creates named
+**API clients**, each bound to a role (viewer/operator/admin); the client
+secret is shown **exactly once** at creation — copy it then, only a hash is
+stored. Clients can be disabled or deleted (deleting one makes its
+integrations fail to obtain tokens immediately). **Open Swagger ↗** jumps to
+the interactive API reference.
+
+![API access](img/41-api-access.png)
+
+Client management is admin (and master-only on a redundancy pair, though the
+clients replicate and tokens keep working on a locked backup — integrations
+survive takeover). Details of the token flow: [§15](#15-remote-control-tcp-protocol-and-rest).
+
 ## 14. Licensing
 
-**Server → License** shows the licence panel:
+The licensing model in one sentence: **a licence buys clean outputs and
+unlimited runtime — it never gates the delay itself.** BUILD, ROLLOUT and
+DUMP work identically on licensed and unlicensed servers; what changes is
+watermarking and (for receivers/scripts) a runtime limit.
 
-![License panel](img/38-license-grace.png)
+**Server → License** is the control panel for all of it:
 
-- Four independently licensed capabilities: **video delay channels**, **audio
-  delay channels**, **video encoder seats**, **audio encoder seats**, plus
-  feature flags (shown in the **Features** row — including **PRIMARY** /
-  **BACKUP**, which gate the redundancy roles, [§13.6](#136-redundancy-primarybackup)).
-- **Activation** — enter a serial and **Activate** (contacts the Cloudcast
-  licensing server; the daily online re-check tolerates 30 days of failures),
-  **Start trial** with an email when no serial is present, or for offline
-  installs place a `licence.lic` file next to the Airlock executable and
-  restart. The **Hardware ID** shown (with copy button) is what a licence
-  request is generated against.
-- **No grace period** — a server with no licence is unlicensed immediately
-  ("Unlicensed — channel outputs carry burnt-in watermarks and audio tones"
-  banner); every channel and encoder runs watermarked until a licence is
-  activated. An *activated* system that can't reach the licence server
-  tolerates 30 days of failed daily checks before it too goes unlicensed.
-  (The backup's 14-day local-control window is a separate mechanism again.)
+![License panel](img/38-license-panel.png)
 
-**Seats and watermarking.** Licensed channel counts are *seats* that admins
-assign per channel (the pill next to the channel name; click to assign or
-release). Anything unseated **still runs but is watermarked**:
+### What a licence grants
 
-- video: the Airlock mark + "AIRLOCK — UNLICENSED" burnt into the output
-  (and its preview — what you see is what airs) plus periodic tone bursts;
-- audio channels: a ~1 s tone burst every 30 s;
-- encoders: "AIRLOCK — ENCODE UNLICENSED" burnt into the TS feed.
+Four independently licensed capabilities, carried as feature strings on the
+licence: **video delay channels** (`CHANNELS=n`), **audio delay channels**
+(`AUDIO=n`), **video encoder seats** (`ENCODE=n`, bare `ENCODE` = unlimited)
+and **audio encoder seats** (`AENCODE=n`) — plus boolean feature flags shown
+in the **Features** row. Trial licences are tagged **(demo)** and default to
+one video channel unless the trial carries explicit counts.
+
+Two flags matter operationally: **PRIMARY** and **BACKUP** gate the
+redundancy roles ([§13.7](#137-redundancy-primarybackup)) — and they are
+*enforced*: a role-flagged licence used under a role it doesn't permit makes
+the whole licence invalid (banner: *"this backup licence does not permit the
+primary role — change the redundancy role or activate a matching licence"*).
+PRIMARY covers primary and standalone; BACKUP covers backup only; a licence
+with no role flags is unrestricted. Role-flagged licences show a **Licence
+role** row in the panel.
+
+### Activation paths
+
+1. **Console, online** — enter the serial, **Activate** (or **Replace
+   license** over an existing one). Activation contacts the Cloudcast
+   licensing server and binds to this machine's **Hardware ID** (shown in the
+   panel with a copy button — quote it when requesting a licence).
+2. **Trial** — when no serial is registered, **Start trial** with an email
+   address. The confirmation link in the email completes it.
+3. **Install time** — the MSI's SERIAL field ([§2](#2-getting-started)). The
+   serial is parked in the registry and consumed at the service's first
+   start; while the licensing server is unreachable it retries daily, and a
+   definitively rejected (e.g. mistyped) serial stops retrying and raises an
+   alert email instead.
+4. **Offline** — place a `licence.lic` file next to the Airlock executable
+   and restart.
+
+### Staying licensed: the daily check and the offline allowance
+
+An activated server re-validates against the licensing server **once a
+day** (first check ~1 minute after startup). Three outcomes:
+
+- **Reachable and valid** — nothing to see; the failure counter resets.
+- **Unreachable** — the failure counter ticks up. The server tolerates
+  **30 consecutive failed daily checks** — roughly a month of full offline
+  operation. The panel row reads "N consecutive failed daily check(s)
+  (allowance 30)", the banner shows "License server unreachable (N/30
+  days)", and warning emails start going out in the last week of the
+  allowance. Past 30, the licence goes invalid ("licensing server
+  unreachable for N days") until connectivity or a manual re-activation
+  restores it — any single successful check resets the counter to zero.
+- **Rejected** (expired / revoked / invalid) — the licence is invalidated
+  immediately, and the verdict sticks until a later check or re-activation
+  succeeds.
+
+A licence with an expiry date also lapses locally on that date regardless of
+connectivity ("perpetual" licences show no expiry). Every validity
+transition is audited (`LICENSE_VALID` / `LICENSE_INVALID`) and emailed once.
+
+### What unlicensed / invalid actually means
+
+There is **no grace period**: from the moment a server has no valid licence
+(fresh install, expiry, revocation, deactivation, exhausted offline
+allowance, role mismatch) enforcement applies immediately —
+
+- **Every delay channel's output is watermarked**: video carries the Airlock
+  mark + "AIRLOCK — UNLICENSED" burnt into the frame (the previews show the
+  composited output — what you see is what airs) plus periodic tone bursts
+  on its audio; audio delay channels play a ~1-second tone burst every 30
+  seconds of output; encoder feeds carry "AIRLOCK — ENCODE UNLICENSED". The
+  header banner reads *"Unlicensed — channel outputs carry burnt-in
+  watermarks and audio tones"* and the licence panel's capability rows show
+  "0 — outputs watermarked" / "0 — outputs carry tones".
+- **Data receivers and scripts run 30 minutes at a stretch**: each enabled
+  receiver and each enabled script is disabled 30 minutes after it was
+  enabled (audited `RECEIVER_UNLICENSED_TIMEOUT` /
+  `SCRIPT_UNLICENSED_TIMEOUT`, one alert email, amber banners on both
+  panels). Re-enabling an item grants it a fresh 30 minutes; there is no
+  countdown in the UI. The delay channels themselves have no runtime limit —
+  they watermark instead.
+- **Nothing operational is refused**: Build/Roll out/Dump, GPIO, TCP and
+  the audio delay all keep working. The design intent is that an unlicensed
+  Airlock is fully evaluable and fails *loud*, never *dangerous*.
 
 ![Unlicensed channel with watermark](img/12-channel-unlicensed.png)
 
-Watermarks react live to seat and licence changes. With no valid licence at
-all, every channel and encoder is unseated and runs watermarked — nothing is
-blocked, and ROLLOUT and DUMP always work, so a delay in progress can always
-be exited safely.
+### Seats
 
-**Runtime limits.** Functionality with no output to watermark is time-boxed
-instead: on an unlicensed server each **data receiver** ([§11](#11-data-receivers-and-delayed-data))
-and **script** ([§12](#12-scripting)) is disabled 30 minutes after it was
-enabled (audited, with an alert email). Re-enabling it grants another
-30 minutes; activating a licence lifts the limit.
+On a licensed server, the capability counts are **seats** that admins spread
+across channels: the pill next to each channel name assigns (amber
+**UNLICENSED**) or releases (grey **licensed**) a seat, and the Encoders page
+does the same for encoder seats. Seats are honoured **lowest channel id
+first** up to the licensed count — so if a replacement licence carries fewer
+seats than are assigned, the highest-numbered channels lose theirs (and
+start watermarking) first. All watermark changes take effect **live, on
+air, within seconds** — assigning a seat, activating a licence or letting
+one lapse never interrupts the programme; the video engine flips its
+watermark in place, while audio channels and encoders briefly reconfigure.
+
+Deactivating (panel button, confirm: *"Deactivate this license? Channel
+outputs will immediately carry burnt-in watermarks and audio tones."*) drops
+straight to the unlicensed behaviour above.
+
+*(The redundancy backup's 14-day local-control window
+([§13.7](#137-redundancy-primarybackup)) is a separate mechanism — it
+governs control lockout on a backup that lost its master, never
+watermarking.)*
 
 ## 15. Remote control: TCP protocol and REST
 
@@ -756,32 +1205,59 @@ returns `ERR … ERR_INVALID_STATE`. On a synced backup, mutating verbs answer
 `ERR <ch> LOCKED …` (after the 14-day window expires, DUMP/DUMPALL/EXIT/
 ROLLOUT still work — everything else is refused).
 
-### REST
+### REST, OAuth2 and Swagger
 
 Everything in the console is REST + JWT underneath (`POST /api/auth/login` →
-bearer token). Highlights: `GET /api/channels`,
+bearer token). **External integrations** should instead use an API client
+([§13.8](#138-api-access-server--api-access)) with the OAuth2
+client-credentials grant: `POST /api/oauth/token`
+(`application/x-www-form-urlencoded`, `grant_type=client_credentials`,
+credentials as form fields or HTTP Basic) returns a Bearer token carrying the
+client's role (8 h expiry; standard RFC 6749 error envelopes; rate-limited
+10/min/IP; issuance is audited and **keeps working on a locked redundancy
+backup**, so integrations survive takeover).
+
+The interactive API reference lives at **`/swagger`** (OpenAPI JSON at
+`/swagger/v1/swagger.json`) — browsable without signing in; "Try it out"
+needs a pasted bearer token or the built-in OAuth2 flow in the Authorize
+dialog:
+
+![Swagger UI](img/42-swagger.png)
+
+Highlights: `GET /api/channels`,
 `POST /api/channels/{n}/build|rollout|dump|trigger` (dump requires body
 `{"confirm": true}`), audio actions
 `POST /api/channels/{n}/audio/{action}` (build, dump, dumpall, exit,
 exitcompress, exitrollout, cough on/off, censor on/off, forcecensoroff, and
 the post-delay `coughposton/off` / `censorposton/off`), audio processing
 `PUT /api/channels/{n}/audio-processing` and `/encode-audio-processing`,
-redundancy `GET/PUT /api/redundancy` + `takeover`/`rejoin`, `GET /api/audit`,
-`GET /api/metrics`, `GET /api/server/status`. WebSockets (token via
-`?access_token=`) carry telemetry, previews, audio monitoring and the log
-streams.
+video censor `POST /api/channels/{n}/censor/{censor|censoron|censoroff|
+censorposton|censorpostoff|forcecensoroff}` (operator) +
+`GET/PUT /api/channels/{n}/censor-config` (admin),
+redundancy `GET/PUT /api/redundancy` + `takeover`/`rejoin`, API clients
+`GET/POST /api/api-clients`, script variables `GET /api/script-vars` +
+`PUT/DELETE /api/script-vars/{name}`, video fill schedules
+`GET/POST /api/channels/{n}/fill-schedule` +
+`DELETE .../fill-schedule/{id}` (operator), users
+`GET/POST/DELETE /api/users` + `POST /api/users/{id}/role` +
+`DELETE /api/users/{id}/role-override` (admin), ASIO discovery
+`GET /api/audio/devices[/{name}/channels]`, live mapping state
+`GET /api/lwrp/mappings/status`, `GET /api/audit`, `GET /api/metrics`,
+`GET /api/server/status`. WebSockets (token via `?access_token=`) carry
+telemetry, previews, audio monitoring and the log streams.
 
 ## 16. Roles and permissions
 
 Roles are hierarchical: **admin ⊇ operator ⊇ viewer**. On a **synced backup**
 every operational capability is refused server-side regardless of role
-([§13.6](#136-redundancy-primarybackup)).
+([§13.7](#137-redundancy-primarybackup)).
 
 | Capability | viewer | operator | admin |
 |---|:-:|:-:|:-:|
 | View dashboard, previews, meters, audit, clips, fills, receivers, GPIO state, licence status | ✔ | ✔ | ✔ |
 | Play dump clips / fill previews; change own password | ✔ | ✔ | ✔ |
-| Build / Roll out / Dump / Trigger (video) | | ✔ | ✔ |
+| Build / Roll out / Dump / Trigger / Censor (video) | | ✔ | ✔ |
+| Listen to audio-channel pre/post monitors | ✔ | ✔ | ✔ |
 | Audio delay commands and audio config/schedules | | ✔ | ✔ |
 | Channel & encoder audio processing (trim/EQ/compressor) | | ✔ | ✔ |
 | Enable built-in test pattern; GPI simulate; GPO toggle/override | | ✔ | ✔ |
@@ -791,9 +1267,10 @@ every operational capability is refused server-side regardless of role
 | Fill upload/delete; clip delete; alert groups | | | ✔ |
 | Server settings, SMTP, LDAP/OIDC, licence activate/deactivate, backup | | | ✔ |
 | Redundancy role & sync-key configuration | | | ✔ |
+| API clients (create/disable/delete); persistent script variables | | | ✔ |
 | LWRP devices/mappings/routing; data receivers/routes | | | ✔ |
 | Scripting (the view is hidden below admin) | | | ✔ |
-| User management (API) | | | ✔ |
+| User management (Server → Users + API) | | | ✔ |
 
 ## 17. Alarms and troubleshooting
 
@@ -814,6 +1291,8 @@ there, including refusals and their reasons.
 
 ---
 
-*Manual generated against Airlock as of 2026-07-11 (main @ 77d21e2,
-AIR-1…113). Screenshots were captured on a live instance using the built-in
-colour-bars + tone test source.*
+*Manual generated against Airlock as of 2026-07-12 (main @ 53a2144,
+AIR-1…132). Screenshots were captured on a live instance using the built-in
+colour-bars + tone test source; channel screenshots showing clean (unmarked)
+outputs were taken on a seated configuration — an unlicensed server
+watermarks every output as described in §14.*
