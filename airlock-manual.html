@@ -610,6 +610,17 @@ channel&#39;s settings (video) or the audio card&#39;s <strong>Alarms</strong> t
 This assignment is separate from the DUMP alert-group assignment. A channel
 with no alarm groups assigned sends no alarm emails.</li>
 </ol>
+<p><strong>Webhooks</strong>: a group can also (or instead) deliver alarms to a third-party
+system — set a <em>Webhook URL</em> on the group (Server → Alert groups). Airlock
+POSTs one JSON object per transition (<code>event, active, code, friendlyName,
+category, severity, channel, channelName, whenUtc, activeDurationSeconds,
+instance</code>); if a <em>secret</em> is set the body is signed with
+<code>X-Airlock-Signature: sha256=HMAC-SHA256(body)</code> so the receiver can verify
+authenticity. The same category subscriptions, active/restored flags and
+per-channel assignment apply. Webhooks work without SMTP configured, and a
+<em>Test webhook</em> button fires a synthetic payload. Delivery is one attempt per
+event (10&nbsp;s timeout) — successes and failures are audited as
+<code>WEBHOOK_SENT</code>&nbsp;/&nbsp;<code>WEBHOOK_FAILED</code>.</p>
 <p>Emails are debounced (Server → Email): an alarm must persist (default 15&nbsp;s)
 before the ACTIVE email, must stay clear (default 30&nbsp;s) before the RESTORED
 email (which includes the outage duration), and a flapping alarm is throttled
