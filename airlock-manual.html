@@ -643,6 +643,28 @@ hold / hysteresis / restore knobs, raising <code>ALARM_VIDEO_SILENCE</code>. A s
 that keeps sending video but drops its audio stream counts as silent; a fully
 dead feed is reported as source-lost instead (the two alarms never double-fire).
 The Alarms tab also holds the channel&#39;s alarm alert-group assignment.</p>
+<h3 id="62-snmp">6.2 SNMP monitoring &amp; control</h3>
+<p>An embedded <strong>SNMP v2c agent</strong> (Server → General) lets an NMS poll Airlock by
+OID under <code>1.3.6.1.4.1.99999.134</code> (MIB module: <code>docs/airlock.mib</code>): server
+scalars (alarm counts, worst severity, redundancy role, licence, watchdog) and a
+per-channel table (name, kind, delay state, depth, alarms, censor/cough lamps,
+encoder, watermark). Reads use the <em>read community</em>; both primary and backup
+answer for their own state.</p>
+<p>With a separate <em>write community</em> configured, <code>airlockChannelCommand</code>
+(<code>…10.1.12.&lt;ch&gt;</code>) accepts the Axia-GPIO-parity transport commands via SNMP SET
+— 1&nbsp;build · 2&nbsp;dump · 3&nbsp;dump-all · 4&nbsp;exit · 5/6&nbsp;cough on/off (audio) ·
+7/8&nbsp;censor on/off. Commands route through the same gated path as GPIO/REST and
+are audited with source <code>snmp</code>; a locked backup refuses SETs
+(<code>authorizationError</code>). Leaving the write community empty keeps the agent
+read-only.</p>
+<pre><code>snmpwalk -v2c -c public  airlock:1161 1.3.6.1.4.1.99999.134
+snmpget  -v2c -c public  airlock:1161 1.3.6.1.4.1.99999.134.4.0        # worst severity
+snmpset  -v2c -c &lt;write&gt; airlock:1161 1.3.6.1.4.1.99999.134.10.1.12.1 i 1   # BUILD ch1
+</code></pre>
+<p><strong>Linux note</strong>: binding the standard port 161 needs
+<code>CAP_NET_BIND_SERVICE</code> (systemd: <code>AmbientCapabilities=CAP_NET_BIND_SERVICE</code>,
+or <code>setcap</code> on the binary) — otherwise pick a port ≥ 1024 (e.g. 1161). A failed
+bind is audited as <code>SNMP_BIND_FAILED</code> and the console log names the fix.</p>
 <h2 id="7-fill-assets">7. Fill assets</h2>
 <p><strong>Video → Fills</strong> is the fill library (upload/delete are admin):</p>
 <p><img src="img/24-fills.png" alt="Fills"></p>
