@@ -848,7 +848,13 @@ The editor (Monaco, with Ctrl-Space autocomplete for the `air` host API)
 binds a script to a **trigger**: `manual`, `startup`/`shutdown`,
 `channelEvent` (EnteredBuilding/EnteredDelayed/EnteredRollingOut/
 ReturnedToLive/Dumped, optionally scoped to a channel), `audioEvent`,
-`encoderEvent`, `gpi`, `timer`, `schedule` (cron), or the data triggers.
+`encoderEvent`, `gpi` (a concrete LWRP device/port/pin and edge, any of them
+wildcarded), `status` (the GPO mapping level vocabulary — delaySafe,
+stateLive, depth deciles, censor lamps, serverAlarm — firing when it
+activates/deactivates), `scriptCompleted` (chain a script off another
+script's completion, filtered by source script and success/failure;
+loop-guarded so chains never revisit an ancestor and stop after 8 hops),
+`timer`, `schedule` (cron), or the data triggers.
 The **Examples** dropdown inserts a worked, compile-tested starting point
 per language — timer + persistent counter, cron schedule, delay status
 watchdog, GPI dump-all, parsing JSON/XML/binary payloads from data
