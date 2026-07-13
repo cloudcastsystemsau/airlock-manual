@@ -590,8 +590,38 @@ login:</p>
 <p><img src="img/27-clip-player.png" alt="Clip player"></p>
 <p><strong>Alert groups</strong> (Server → Alert groups, admin) are named recipient lists
 (one email per line or comma-separated). Assign any number of groups to each
-channel in its settings. Groups are only emailed on DUMP — nothing else.</p>
+channel in its settings. Groups are emailed on DUMP, and — if subscribed —
+on alarms (below).</p>
 <p><img src="img/37-alert-groups.png" alt="Alert groups"></p>
+<h3 id="61-alarm-emails">6.1 Alarm emails</h3>
+<p>Alarms (video source loss, delay engine faults, encoder down, A/V offset
+drift, audio delay down, audio silence) can email alert groups when they go
+<strong>active</strong> and again when they <strong>restore</strong>. Routing needs both halves:</p>
+<ol>
+<li><strong>On the group</strong> (Server → Alert groups) — tick the alarm categories the
+group cares about (<em>Video delay</em>, <em>Encoding</em>, <em>Audio delay</em>, <em>System</em>) and
+whether it gets <em>Email on active</em> and/or <em>Email on restored</em>.</li>
+<li><strong>On the channel</strong> — tick the group under <strong>Alarm email alerts</strong> in the
+channel&#39;s settings (video) or the audio card&#39;s <strong>Alarms</strong> tab (audio).
+This assignment is separate from the DUMP alert-group assignment. A channel
+with no alarm groups assigned sends no alarm emails.</li>
+</ol>
+<p>Emails are debounced (Server → Email): an alarm must persist (default 15&nbsp;s)
+before the ACTIVE email, must stay clear (default 30&nbsp;s) before the RESTORED
+email (which includes the outage duration), and a flapping alarm is throttled
+by a per-alarm cooldown (default 300&nbsp;s). Momentary alarms (FIFO overflow,
+SCTE-in-skip, metadata queue) auto-clear 30&nbsp;s after their last occurrence.
+On a primary/backup pair only the primary sends (the backup mirrors the
+config but suppresses outward email).</p>
+<p><strong>Audio silence detection</strong> (audio card → cog → Alarms) raises
+<code>ALARM_AUDIO_SILENCE</code> (and a <strong>SILENCE</strong> badge on the card) when the
+channel&#39;s <em>input</em> peak stays below a threshold (default −50&nbsp;dBFS) for the
+hold time (default 30&nbsp;s); it restores once the level holds above
+threshold&nbsp;+&nbsp;hysteresis (default 6&nbsp;dB) for the restore window (default
+5&nbsp;s). Detection pauses while the audio child itself is down — that
+condition is the separate <code>ALARM_AUDIO_DOWN</code>. All alarm raise/clear
+transitions are written to the audit log as <code>ALARM_RAISED</code> /
+<code>ALARM_CLEARED</code>.</p>
 <h2 id="7-fill-assets">7. Fill assets</h2>
 <p><strong>Video → Fills</strong> is the fill library (upload/delete are admin):</p>
 <p><img src="img/24-fills.png" alt="Fills"></p>
