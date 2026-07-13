@@ -152,6 +152,8 @@
 <a class="toc-h3" href="#feed-stats">Feed stats</a>
 <a class="toc-h3" href="#channel-audio-processing-trim--eq--compressor">Channel audio processing (trim · EQ · compressor)</a>
 <a class="toc-h2" href="#6-dump-alerts-clips-and-alert-groups">6. DUMP alerts, clips and alert groups</a>
+<a class="toc-h3" href="#61-alarm-emails-webhooks-and-silence-detection">6.1 Alarm emails, webhooks and silence detection</a>
+<a class="toc-h3" href="#62-snmp-monitoring--control">6.2 SNMP monitoring &amp; control</a>
 <a class="toc-h2" href="#7-fill-assets">7. Fill assets</a>
 <a class="toc-h2" href="#8-the-encode-option-srtscte-35">8. The encode option (SRT/SCTE-35)</a>
 <a class="toc-h2" href="#9-audio-profanity-delay">9. Audio profanity delay</a>
@@ -590,81 +592,76 @@ login:</p>
 <p><img src="img/27-clip-player.png" alt="Clip player"></p>
 <p><strong>Alert groups</strong> (Server → Alert groups, admin) are named recipient lists
 (one email per line or comma-separated). Assign any number of groups to each
-channel in its settings. Groups are emailed on DUMP, and — if subscribed —
-on alarms (below).</p>
+channel in its settings. Groups are emailed on DUMP, and — if subscribed — on
+alarms (below).</p>
 <p><img src="img/37-alert-groups.png" alt="Alert groups"></p>
-<h3 id="61-alarm-emails">6.1 Alarm emails</h3>
-<p>The <strong>Alarms</strong> page (top navigation, all roles) shows every alarm active
-right now — severity, channel (click to jump to it), when it raised and for how
-long — plus the full raise/clear history from the audit log, newest first with
-paging. Active alarms refresh every few seconds.</p>
-<p>Alarms (video source loss, delay engine faults, encoder down, A/V offset
-drift, audio delay down, audio silence) can email alert groups when they go
-<strong>active</strong> and again when they <strong>restore</strong>. Routing needs both halves:</p>
+<h3 id="61-alarm-emails-webhooks-and-silence-detection">6.1 Alarm emails, webhooks and silence detection</h3>
+<p>The <strong>Alarms</strong> page (top navigation, all roles) shows every alarm active right
+now — severity, channel (click to jump to it), when it raised and for how long —
+plus the full raise/clear history from the audit log, newest first with paging.
+Active alarms refresh every few seconds.</p>
+<p>Alarms (video source loss, delay engine faults, encoder down, A/V offset drift,
+audio delay down, audio silence) can email alert groups when they go <strong>active</strong>
+and again when they <strong>restore</strong>. Routing needs both halves:</p>
 <ol>
 <li><strong>On the group</strong> (Server → Alert groups) — tick the alarm categories the
 group cares about (<em>Video delay</em>, <em>Encoding</em>, <em>Audio delay</em>, <em>System</em>) and
 whether it gets <em>Email on active</em> and/or <em>Email on restored</em>.</li>
 <li><strong>On the channel</strong> — tick the group under <strong>Alarm email alerts</strong> in the
-channel&#39;s settings (video) or the audio card&#39;s <strong>Alarms</strong> tab (audio).
-This assignment is separate from the DUMP alert-group assignment. A channel
-with no alarm groups assigned sends no alarm emails.</li>
+channel&#39;s settings (video) or the audio card&#39;s <strong>Alarms</strong> tab (audio). This
+assignment is separate from the DUMP alert-group assignment. A channel with
+no alarm groups assigned sends no alarm emails.</li>
 </ol>
 <p><strong>Webhooks</strong>: a group can also (or instead) deliver alarms to a third-party
-system — set a <em>Webhook URL</em> on the group (Server → Alert groups). Airlock
-POSTs one JSON object per transition (<code>event, active, code, friendlyName,
-category, severity, channel, channelName, whenUtc, activeDurationSeconds,
-instance</code>); if a <em>secret</em> is set the body is signed with
-<code>X-Airlock-Signature: sha256=HMAC-SHA256(body)</code> so the receiver can verify
-authenticity. The same category subscriptions, active/restored flags and
-per-channel assignment apply. Webhooks work without SMTP configured, and a
-<em>Test webhook</em> button fires a synthetic payload. Delivery is one attempt per
-event (10&nbsp;s timeout) — successes and failures are audited as
-<code>WEBHOOK_SENT</code>&nbsp;/&nbsp;<code>WEBHOOK_FAILED</code>.</p>
-<p>Emails are debounced (Server → Email): an alarm must persist (default 15&nbsp;s)
-before the ACTIVE email, must stay clear (default 30&nbsp;s) before the RESTORED
-email (which includes the outage duration), and a flapping alarm is throttled
-by a per-alarm cooldown (default 300&nbsp;s). Momentary alarms (FIFO overflow,
-SCTE-in-skip, metadata queue) auto-clear 30&nbsp;s after their last occurrence.
-On a primary/backup pair only the primary sends (the backup mirrors the
-config but suppresses outward email).</p>
+system — set a <em>Webhook URL</em> on the group (Server → Alert groups). Airlock POSTs
+one JSON object per transition (<code>event, active, code, friendlyName, category, severity, channel, channelName, whenUtc, activeDurationSeconds, instance</code>); if a
+<em>secret</em> is set the body is signed with <code>X-Airlock-Signature: sha256=HMAC-SHA256(body)</code> so the receiver can verify authenticity. The same
+category subscriptions, active/restored flags and per-channel assignment apply.
+Webhooks work without SMTP configured, and a <em>Test webhook</em> button fires a
+synthetic payload. Delivery is one attempt per event (10 s timeout) — successes
+and failures are audited as <code>WEBHOOK_SENT</code> / <code>WEBHOOK_FAILED</code>.</p>
+<p>Emails are debounced (Server → Email): an alarm must persist (default 15 s)
+before the ACTIVE email, must stay clear (default 30 s) before the RESTORED
+email (which includes the outage duration), and a flapping alarm is throttled by
+a per-alarm cooldown (default 300 s). Momentary alarms (FIFO overflow,
+SCTE-in-skip, metadata queue) auto-clear 30 s after their last occurrence. On a
+primary/backup pair only the primary sends (the backup mirrors the config but
+suppresses outward email).</p>
 <p><strong>Audio silence detection</strong> (audio card → cog → Alarms) raises
-<code>ALARM_AUDIO_SILENCE</code> (and a <strong>SILENCE</strong> badge on the card) when the
-channel&#39;s <em>input</em> peak stays below a threshold (default −50&nbsp;dBFS) for the
-hold time (default 30&nbsp;s); it restores once the level holds above
-threshold&nbsp;+&nbsp;hysteresis (default 6&nbsp;dB) for the restore window (default
-5&nbsp;s). Detection pauses while the audio child itself is down — that
-condition is the separate <code>ALARM_AUDIO_DOWN</code>. All alarm raise/clear
-transitions are written to the audit log as <code>ALARM_RAISED</code> /
-<code>ALARM_CLEARED</code>.</p>
+<code>ALARM_AUDIO_SILENCE</code> (and a <strong>SILENCE</strong> badge on the card) when the channel&#39;s
+<em>input</em> peak stays below a threshold (default −50 dBFS) for the hold time
+(default 30 s); it restores once the level holds above threshold + hysteresis
+(default 6 dB) for the restore window (default 5 s). Detection pauses while the
+audio child itself is down — that condition is the separate <code>ALARM_AUDIO_DOWN</code>.
+All alarm raise/clear transitions are written to the audit log as <code>ALARM_RAISED</code>
+/ <code>ALARM_CLEARED</code>.</p>
 <p><strong>Video channels</strong> have the same silence detector on their received (input)
-programme audio — channel settings → <strong>Alarms</strong> tab, identical threshold /
-hold / hysteresis / restore knobs, raising <code>ALARM_VIDEO_SILENCE</code>. A source
-that keeps sending video but drops its audio stream counts as silent; a fully
-dead feed is reported as source-lost instead (the two alarms never double-fire).
-The Alarms tab also holds the channel&#39;s alarm alert-group assignment.</p>
-<h3 id="62-snmp">6.2 SNMP monitoring &amp; control</h3>
-<p>An embedded <strong>SNMP v2c agent</strong> (Server → General) lets an NMS poll Airlock by
-OID under <code>1.3.6.1.4.1.99999.134</code> (MIB module: <code>docs/airlock.mib</code>): server
-scalars (alarm counts, worst severity, redundancy role, licence, watchdog) and a
+programme audio — channel settings → <strong>Alarms</strong> tab, identical threshold / hold
+/ hysteresis / restore knobs, raising <code>ALARM_VIDEO_SILENCE</code>. A source that keeps
+sending video but drops its audio stream counts as silent; a fully dead feed is
+reported as source-lost instead (the two alarms never double-fire). The Alarms
+tab also holds the channel&#39;s alarm alert-group assignment.</p>
+<h3 id="62-snmp-monitoring--control">6.2 SNMP monitoring &amp; control</h3>
+<p>An embedded <strong>SNMP v2c agent</strong> (Server → General) lets an NMS poll Airlock by OID
+under <code>1.3.6.1.4.1.99999.134</code> (MIB module: <code>docs/airlock.mib</code>): server scalars
+(alarm counts, worst severity, redundancy role, licence, watchdog) and a
 per-channel table (name, kind, delay state, depth, alarms, censor/cough lamps,
 encoder, watermark). Reads use the <em>read community</em>; both primary and backup
 answer for their own state.</p>
 <p>With a separate <em>write community</em> configured, <code>airlockChannelCommand</code>
-(<code>…10.1.12.&lt;ch&gt;</code>) accepts the Axia-GPIO-parity transport commands via SNMP SET
-— 1&nbsp;build · 2&nbsp;dump · 3&nbsp;dump-all · 4&nbsp;exit · 5/6&nbsp;cough on/off (audio) ·
-7/8&nbsp;censor on/off. Commands route through the same gated path as GPIO/REST and
-are audited with source <code>snmp</code>; a locked backup refuses SETs
-(<code>authorizationError</code>). Leaving the write community empty keeps the agent
-read-only.</p>
+(<code>…10.1.12.&lt;ch&gt;</code>) accepts the Axia-GPIO-parity transport commands via SNMP SET —
+1 build · 2 dump · 3 dump-all · 4 exit · 5/6 cough on/off (audio) · 7/8 censor
+on/off. Commands route through the same gated path as GPIO/REST and are audited
+with source <code>snmp</code>; a locked backup refuses SETs (<code>authorizationError</code>). Leaving
+the write community empty keeps the agent read-only.</p>
 <pre><code>snmpwalk -v2c -c public  airlock:1161 1.3.6.1.4.1.99999.134
 snmpget  -v2c -c public  airlock:1161 1.3.6.1.4.1.99999.134.4.0        # worst severity
 snmpset  -v2c -c &lt;write&gt; airlock:1161 1.3.6.1.4.1.99999.134.10.1.12.1 i 1   # BUILD ch1
 </code></pre>
-<p><strong>Linux note</strong>: binding the standard port 161 needs
-<code>CAP_NET_BIND_SERVICE</code> (systemd: <code>AmbientCapabilities=CAP_NET_BIND_SERVICE</code>,
-or <code>setcap</code> on the binary) — otherwise pick a port ≥ 1024 (e.g. 1161). A failed
-bind is audited as <code>SNMP_BIND_FAILED</code> and the console log names the fix.</p>
+<p><strong>Linux note</strong>: binding the standard port 161 needs <code>CAP_NET_BIND_SERVICE</code>
+(systemd: <code>AmbientCapabilities=CAP_NET_BIND_SERVICE</code>, or <code>setcap</code> on the binary)
+— otherwise pick a port ≥ 1024 (e.g. 1161). A failed bind is audited as
+<code>SNMP_BIND_FAILED</code> and the console log names the fix.</p>
 <h2 id="7-fill-assets">7. Fill assets</h2>
 <p><strong>Video → Fills</strong> is the fill library (upload/delete are admin):</p>
 <p><img src="img/24-fills.png" alt="Fills"></p>

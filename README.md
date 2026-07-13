@@ -36,6 +36,7 @@ scripting API see [docs/scripting-guide.md](../scripting-guide.md).
 5. [Channel configuration](#5-channel-configuration)
    - [Source & name](#source--name) · [Fill + dayparted schedule](#fill--static-assignment-and-dayparted-schedule) · [Delay mode](#delay-mode) · [Censor parameters](#censor-parameters) · [Feed stats](#feed-stats) · [Audio processing](#channel-audio-processing-trim--eq--compressor)
 6. [DUMP alerts, clips and alert groups](#6-dump-alerts-clips-and-alert-groups)
+   - [**Alarms, emails and webhooks**](#61-alarm-emails-webhooks-and-silence-detection) · [**SNMP monitoring & control**](#62-snmp-monitoring--control)
 7. [Fill assets](#7-fill-assets)
 8. [The encode option (SRT/SCTE-35)](#8-the-encode-option-srtscte-35)
 9. [Audio profanity delay](#9-audio-profanity-delay)
@@ -456,9 +457,91 @@ login:
 
 **Alert groups** (Server → Alert groups, admin) are named recipient lists
 (one email per line or comma-separated). Assign any number of groups to each
-channel in its settings. Groups are only emailed on DUMP — nothing else.
+channel in its settings. Groups are emailed on DUMP, and — if subscribed — on
+alarms (below).
 
 ![Alert groups](img/37-alert-groups.png)
+
+### 6.1 Alarm emails, webhooks and silence detection
+
+The **Alarms** page (top navigation, all roles) shows every alarm active right
+now — severity, channel (click to jump to it), when it raised and for how long —
+plus the full raise/clear history from the audit log, newest first with paging.
+Active alarms refresh every few seconds.
+
+Alarms (video source loss, delay engine faults, encoder down, A/V offset drift,
+audio delay down, audio silence) can email alert groups when they go **active**
+and again when they **restore**. Routing needs both halves:
+
+1. **On the group** (Server → Alert groups) — tick the alarm categories the
+   group cares about (*Video delay*, *Encoding*, *Audio delay*, *System*) and
+   whether it gets *Email on active* and/or *Email on restored*.
+2. **On the channel** — tick the group under **Alarm email alerts** in the
+   channel's settings (video) or the audio card's **Alarms** tab (audio). This
+   assignment is separate from the DUMP alert-group assignment. A channel with
+   no alarm groups assigned sends no alarm emails.
+
+**Webhooks**: a group can also (or instead) deliver alarms to a third-party
+system — set a *Webhook URL* on the group (Server → Alert groups). Airlock POSTs
+one JSON object per transition (`event, active, code, friendlyName, category,
+severity, channel, channelName, whenUtc, activeDurationSeconds, instance`); if a
+*secret* is set the body is signed with `X-Airlock-Signature:
+sha256=HMAC-SHA256(body)` so the receiver can verify authenticity. The same
+category subscriptions, active/restored flags and per-channel assignment apply.
+Webhooks work without SMTP configured, and a *Test webhook* button fires a
+synthetic payload. Delivery is one attempt per event (10 s timeout) — successes
+and failures are audited as `WEBHOOK_SENT` / `WEBHOOK_FAILED`.
+
+Emails are debounced (Server → Email): an alarm must persist (default 15 s)
+before the ACTIVE email, must stay clear (default 30 s) before the RESTORED
+email (which includes the outage duration), and a flapping alarm is throttled by
+a per-alarm cooldown (default 300 s). Momentary alarms (FIFO overflow,
+SCTE-in-skip, metadata queue) auto-clear 30 s after their last occurrence. On a
+primary/backup pair only the primary sends (the backup mirrors the config but
+suppresses outward email).
+
+**Audio silence detection** (audio card → cog → Alarms) raises
+`ALARM_AUDIO_SILENCE` (and a **SILENCE** badge on the card) when the channel's
+*input* peak stays below a threshold (default −50 dBFS) for the hold time
+(default 30 s); it restores once the level holds above threshold + hysteresis
+(default 6 dB) for the restore window (default 5 s). Detection pauses while the
+audio child itself is down — that condition is the separate `ALARM_AUDIO_DOWN`.
+All alarm raise/clear transitions are written to the audit log as `ALARM_RAISED`
+/ `ALARM_CLEARED`.
+
+**Video channels** have the same silence detector on their received (input)
+programme audio — channel settings → **Alarms** tab, identical threshold / hold
+/ hysteresis / restore knobs, raising `ALARM_VIDEO_SILENCE`. A source that keeps
+sending video but drops its audio stream counts as silent; a fully dead feed is
+reported as source-lost instead (the two alarms never double-fire). The Alarms
+tab also holds the channel's alarm alert-group assignment.
+
+### 6.2 SNMP monitoring & control
+
+An embedded **SNMP v2c agent** (Server → General) lets an NMS poll Airlock by OID
+under `1.3.6.1.4.1.99999.134` (MIB module: `docs/airlock.mib`): server scalars
+(alarm counts, worst severity, redundancy role, licence, watchdog) and a
+per-channel table (name, kind, delay state, depth, alarms, censor/cough lamps,
+encoder, watermark). Reads use the *read community*; both primary and backup
+answer for their own state.
+
+With a separate *write community* configured, `airlockChannelCommand`
+(`…10.1.12.<ch>`) accepts the Axia-GPIO-parity transport commands via SNMP SET —
+1 build · 2 dump · 3 dump-all · 4 exit · 5/6 cough on/off (audio) · 7/8 censor
+on/off. Commands route through the same gated path as GPIO/REST and are audited
+with source `snmp`; a locked backup refuses SETs (`authorizationError`). Leaving
+the write community empty keeps the agent read-only.
+
+```
+snmpwalk -v2c -c public  airlock:1161 1.3.6.1.4.1.99999.134
+snmpget  -v2c -c public  airlock:1161 1.3.6.1.4.1.99999.134.4.0        # worst severity
+snmpset  -v2c -c <write> airlock:1161 1.3.6.1.4.1.99999.134.10.1.12.1 i 1   # BUILD ch1
+```
+
+**Linux note**: binding the standard port 161 needs `CAP_NET_BIND_SERVICE`
+(systemd: `AmbientCapabilities=CAP_NET_BIND_SERVICE`, or `setcap` on the binary)
+— otherwise pick a port ≥ 1024 (e.g. 1161). A failed bind is audited as
+`SNMP_BIND_FAILED` and the console log names the fix.
 
 ## 7. Fill assets
 
