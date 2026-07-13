@@ -622,6 +622,12 @@ threshold&nbsp;+&nbsp;hysteresis (default 6&nbsp;dB) for the restore window (def
 condition is the separate <code>ALARM_AUDIO_DOWN</code>. All alarm raise/clear
 transitions are written to the audit log as <code>ALARM_RAISED</code> /
 <code>ALARM_CLEARED</code>.</p>
+<p><strong>Video channels</strong> have the same silence detector on their received (input)
+programme audio — channel settings → <strong>Alarms</strong> tab, identical threshold /
+hold / hysteresis / restore knobs, raising <code>ALARM_VIDEO_SILENCE</code>. A source
+that keeps sending video but drops its audio stream counts as silent; a fully
+dead feed is reported as source-lost instead (the two alarms never double-fire).
+The Alarms tab also holds the channel&#39;s alarm alert-group assignment.</p>
 <h2 id="7-fill-assets">7. Fill assets</h2>
 <p><strong>Video → Fills</strong> is the fill library (upload/delete are admin):</p>
 <p><img src="img/24-fills.png" alt="Fills"></p>
