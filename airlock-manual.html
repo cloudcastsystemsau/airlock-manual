@@ -143,12 +143,15 @@
 <a class="toc-h3" href="#build">Build</a>
 <a class="toc-h3" href="#delayed--the-protection-window">Delayed — the protection window</a>
 <a class="toc-h3" href="#censor--bleep-without-dumping">Censor — bleep without dumping</a>
+<a class="toc-h3" href="#blocking-scte-cues">Blocking SCTE cues</a>
 <a class="toc-h3" href="#simulating-source-loss-engine-sim">Simulating source loss (engine-sim)</a>
 <a class="toc-h2" href="#5-channel-configuration">5. Channel configuration</a>
 <a class="toc-h3" href="#source--name">Source &amp; name</a>
 <a class="toc-h3" href="#fill--static-assignment-and-dayparted-schedule">Fill — static assignment and dayparted schedule</a>
 <a class="toc-h3" href="#delay-mode">Delay mode</a>
 <a class="toc-h3" href="#censor-parameters">Censor parameters</a>
+<a class="toc-h3" href="#scte-policy">SCTE policy</a>
+<a class="toc-h3" href="#alarms">Alarms</a>
 <a class="toc-h3" href="#feed-stats">Feed stats</a>
 <a class="toc-h3" href="#channel-audio-processing-trim--eq--compressor">Channel audio processing (trim · EQ · compressor)</a>
 <a class="toc-h2" href="#6-dump-alerts-clips-and-alert-groups">6. DUMP alerts, clips and alert groups</a>
@@ -156,6 +159,7 @@
 <a class="toc-h3" href="#62-snmp-monitoring--control">6.2 SNMP monitoring &amp; control</a>
 <a class="toc-h2" href="#7-fill-assets">7. Fill assets</a>
 <a class="toc-h2" href="#8-the-encode-option-srtscte-35">8. The encode option (SRT/SCTE-35)</a>
+<a class="toc-h3" href="#inbound-scte--cue-pass-through-and-conversion">Inbound SCTE — cue pass-through and conversion</a>
 <a class="toc-h2" href="#9-audio-profanity-delay">9. Audio profanity delay</a>
 <a class="toc-h3" href="#the-command-set">The command set</a>
 <a class="toc-h3" href="#configure--device-delay-and-censor-tabs">Configure — device, delay and censor tabs</a>
@@ -176,6 +180,7 @@
 <a class="toc-h3" href="#136-watchdog">13.6 Watchdog</a>
 <a class="toc-h3" href="#137-redundancy-primarybackup">13.7 Redundancy (primary/backup)</a>
 <a class="toc-h3" href="#138-api-access-server--api-access">13.8 API access (Server → API access)</a>
+<a class="toc-h3" href="#139-panel-control-server--panel-control">13.9 Panel control (Server → Panel control)</a>
 <a class="toc-h2" href="#14-licensing">14. Licensing</a>
 <a class="toc-h3" href="#what-a-licence-grants">What a licence grants</a>
 <a class="toc-h3" href="#activation-paths">Activation paths</a>
@@ -185,8 +190,18 @@
 <a class="toc-h2" href="#15-remote-control-tcp-protocol-and-rest">15. Remote control: TCP protocol and REST</a>
 <a class="toc-h3" href="#tcp-control-automation-lan">TCP control (automation LAN)</a>
 <a class="toc-h3" href="#rest-oauth2-and-swagger">REST, OAuth2 and Swagger</a>
-<a class="toc-h2" href="#16-roles-and-permissions">16. Roles and permissions</a>
-<a class="toc-h2" href="#17-alarms-and-troubleshooting">17. Alarms and troubleshooting</a>
+<a class="toc-h2" href="#16-audio-streaming-encoders">16. Audio streaming encoders</a>
+<a class="toc-h3" href="#the-audio-encoders-page">The Audio Encoders page</a>
+<a class="toc-h3" href="#source-and-codecs">Source and codecs</a>
+<a class="toc-h3" href="#streaming-outputs-rtmp-hls-and-icecast">Streaming outputs: RTMP, HLS and Icecast</a>
+<a class="toc-h3" href="#rtp-sends-and-transport">RTP sends and transport</a>
+<a class="toc-h3" href="#cues-loudness-and-monitoring">Cues, loudness and monitoring</a>
+<a class="toc-h2" href="#17-audio-decoders-and-rtp-transport">17. Audio decoders and RTP transport</a>
+<a class="toc-h3" href="#playback-devices-and-seats">Playback devices and seats</a>
+<a class="toc-h3" href="#the-decoder-editor">The decoder editor</a>
+<a class="toc-h3" href="#receive-stream-diagnostics">Receive-stream diagnostics</a>
+<a class="toc-h2" href="#18-roles-and-permissions">18. Roles and permissions</a>
+<a class="toc-h2" href="#19-alarms-and-troubleshooting">19. Alarms and troubleshooting</a>
 </nav>
 <main>
 <h1>Airlock User Manual</h1>
@@ -306,6 +321,13 @@ daily retry while the licensing server is unreachable), so offline installs
 still complete. Development/console runs (<code>dotnet run</code>) serve on
 <code>http://localhost:5000</code> by default and keep their data beside the executable
 unless <code>--DataDir</code> says otherwise.</p>
+<p>Airlock runs as a <strong>supervised service</strong>. On Windows the service is configured
+to <strong>restart after every failure</strong> (5 s delay, the failure count resetting
+daily). On Linux a <strong>tarball installer</strong> (<code>install.sh</code> + a <code>systemd</code> unit,
+<code>Type=notify</code>, <code>Restart=on-failure</code>) publishes a self-contained build to
+<code>/opt/airlock</code>, runs it as a dedicated <code>airlock</code> user with data in
+<code>/var/lib/airlock</code> (kept across in-place upgrades and on uninstall), and opens
+the firewall for the web port.</p>
 <h3 id="first-sign-in">First sign-in</h3>
 <p>Open the console (<code>http://&lt;server&gt;:&lt;port&gt;</code>). On first boot, when no users
 exist, Airlock creates the bootstrap account <strong><code>admin</code> / <code>airlock-change-me</code></strong>
@@ -390,7 +412,7 @@ appear while live:</p>
 (splices inserted).</p>
 </li>
 <li><p><strong>Alarm strip</strong> — active alarms in red, e.g. <code>ALARM_SOURCE_LOST</code>
-(<a href="#17-alarms-and-troubleshooting">§17</a>).</p>
+(<a href="#19-alarms-and-troubleshooting">§19</a>).</p>
 </li>
 <li><p><strong>Transport buttons</strong> — Build / Roll out / Dump / Trigger ad break
 (<a href="#4-operating-the-delay">§4</a>).</p>
@@ -468,6 +490,16 @@ state, including marked spans that haven&#39;t aired yet.</li>
 configurable per channel) auto-releases a censor whose release edge never
 arrives — a GPI button whose &quot;off&quot; was lost in a dropped connection can&#39;t
 leave the bleep latched on air.</p>
+<h3 id="blocking-scte-cues">Blocking SCTE cues</h3>
+<p>When a channel is passing SCTE cues from its source (<a href="#8-the-encode-option-srtscte-35">§8</a>),
+a <strong>Block SCTE</strong> button sits in the card&#39;s action row. Press it to <strong>stop
+inbound cues from reaching air on either output</strong> immediately — a live incident
+control that needs no policy edit; the button reads <strong>SCTE blocked ●</strong> and
+pulses red while engaged. It respects the same safety rule as the policy tab:
+<em>a return that would otherwise strand the downstream inside an open break still
+airs</em>. Blocked cues are still decoded, counted, audited and still fire scripts.
+The persistent per-channel rules live on the <strong>SCTE</strong> policy tab
+(<a href="#5-channel-configuration">§5</a>).</p>
 <h3 id="simulating-source-loss-engine-sim">Simulating source loss (engine-sim)</h3>
 <p>Without the NDI runtime, channels run against a synthetic source and admins
 get <strong>Kill sim source / Restore sim source</strong> buttons to rehearse the
@@ -476,9 +508,9 @@ effect — hold-last-frame plus <code>ALARM_SOURCE_LOST</code>:</p>
 <p><img src="img/11-channel-alarm.png" alt="Source lost alarm"></p>
 <h2 id="5-channel-configuration">5. Channel configuration</h2>
 <p>Open the gear on a channel card. The settings modal is tabbed — <strong>Source &amp;
-name · Fill · Delay mode · Censor · Feed stats</strong>. Changes require the
-<strong>admin</strong> role (Feed stats is visible to everyone); source, fill and
-delay-mode changes are only permitted while the channel is <strong>Live</strong>.</p>
+name · Fill · Delay mode · Censor · SCTE · Alarms · Feed stats</strong>. Changes
+require the <strong>admin</strong> role (Feed stats is visible to everyone); source, fill
+and delay-mode changes are only permitted while the channel is <strong>Live</strong>.</p>
 <p><img src="img/04-channel-settings.png" alt="Channel settings — Source &amp; name"></p>
 <h3 id="source--name">Source &amp; name</h3>
 <ul>
@@ -541,6 +573,39 @@ reaction-time back-date; default 500).</li>
 <li><strong>Hold timeout (ms, 0 = off)</strong> — auto-release a censor whose off never
 arrives (default 30000).</li>
 </ul>
+<h3 id="scte-policy">SCTE policy</h3>
+<p>Video channels carry SCTE-104 cues from the source through the delay and
+re-emit them (see <a href="#inbound-scte--cue-pass-through-and-conversion">inbound SCTE</a>
+in §8). The <strong>SCTE</strong> tab governs what happens to those cues per channel, in
+three groups:</p>
+<ul>
+<li><strong>Cue output</strong> — <strong>Re-insert cues on the NDI output</strong> (<em>&quot;the delayed
+SCTE-104, verbatim, on the frame it arrived with&quot;</em>), <strong>Convert cues to
+SCTE-35 on the SRT output</strong> (<em>&quot;same splice point, on the transport stream&quot;</em> —
+needs the encoder, <a href="#8-the-encode-option-srtscte-35">§8</a>), and <strong>Pass other
+metadata (timecode, tally…)</strong>.</li>
+<li><strong>Absolute-time cues</strong> — a cue that names a wall-clock moment (<strong>UTC/VITC/GPI</strong>)
+the delay has already carried past is a hazard: forwarding it tells the
+downstream to splice at a time that has gone. Choose <strong>Drop it and alarm
+(recommended)</strong> or <strong>Forward it anyway</strong>. (At zero depth nothing has moved, so
+the cue still stands and is forwarded regardless.)</li>
+<li><strong>Block cues from reaching air</strong> — <strong>Block break starts (splice-out)</strong>,
+<strong>Block returns (splice-in)</strong> and <strong>Block cues carrying no splice
+(time_signal)</strong>. A blocked cue is still decoded, counted, audited and still
+fires scripts — it simply never leaves the box. <strong>Blocking returns while
+break starts still air strands the downstream inside an ad break</strong>, so if a
+break is open Airlock airs the return anyway and raises
+<code>ALARM_SCTE_BREAK_ORPHAN</code>. To stop cues <em>right now</em> without editing policy,
+use <strong>Block SCTE</strong> on the channel card (<a href="#4-operating-the-delay">§4</a>).</li>
+</ul>
+<p><strong>Save SCTE policy</strong> applies the settings (confirmed with <strong>saved ✓</strong>).</p>
+<h3 id="alarms">Alarms</h3>
+<p>The <strong>Alarms</strong> tab turns on <strong>Silence detection</strong> for the channel (peak below a
+<strong>Threshold (dBFS)</strong> for a <strong>Hold (s)</strong>, restored above threshold +
+<strong>Hysteresis (dB)</strong> for a <strong>Restore (s)</strong>) and picks which alert groups are
+emailed when this channel&#39;s alarms go active or restore. The behaviour and the
+Alarms page it feeds are covered in
+<a href="#61-alarm-emails-webhooks-and-silence-detection">§6.1</a>.</p>
 <h3 id="feed-stats">Feed stats</h3>
 <p>A read-only reference for the bound feed — useful when confirming what an
 upstream source is actually delivering:</p>
@@ -713,12 +778,35 @@ SCTE stats, its <strong>licence seat</strong> state, and Assign/Release seat but
 (admin); the <strong>cog in the card header</strong> opens the Encode modal. The
 Operations dashboard mirrors these as read-only tiles.</p>
 <p><img src="img/14-encoders-page.png" alt="Encoders page"></p>
+<h3 id="inbound-scte--cue-pass-through-and-conversion">Inbound SCTE — cue pass-through and conversion</h3>
+<p>Everything above concerns SCTE markers Airlock <strong>originates</strong> (the <code>adbreak</code>
+trigger, <a href="#4-operating-the-delay">§4</a>). Airlock also <strong>carries markers that
+arrive on the source</strong>: it decodes inbound <strong>SCTE-104</strong> from the source&#39;s NDI
+metadata, delays each cue <strong>frame-exactly</strong> through the same buffer as the
+pictures, and re-emits it so the splice still lands on the right frame after
+the delay — re-inserted <strong>verbatim</strong> in the NDI output&#39;s metadata and, when the
+encoder runs, converted to <strong>PTS-aligned SCTE-35</strong> on the SRT/TS rail. A cue
+that would otherwise fire on both rails is de-duplicated within a ±2-frame
+window so the transport stream never double-splices.</p>
+<p>What each channel does with those cues — re-insert on NDI, convert on SRT,
+handle a cue whose absolute time the delay has outrun, or block break-starts/
+returns/<code>time_signal</code> — is set on the channel&#39;s <strong>SCTE</strong> policy tab
+(<a href="#5-channel-configuration">§5</a>), with the live <strong>Block SCTE</strong> control on the
+card (<a href="#4-operating-the-delay">§4</a>) for incidents. Scripts can react to cues as
+they arrive and as they air (<code>scteReceived</code> / <code>scteAired</code>,
+<a href="#12-scripting">§12</a>).</p>
 <h2 id="9-audio-profanity-delay">9. Audio profanity delay</h2>
 <p>Audio channels are broadcast profanity delays on a sound-device pair,
 modelled on long-serving industry practice: the delay <strong>builds by playing
 programme slightly slow</strong> (or by inserting fill) and <strong>exits slightly fast</strong>
 (or jump-cuts), with equal-power crossfades so nothing clicks. They live on
 <strong>Audio → Delay channels</strong>:</p>
+<blockquote>
+<p>An audio channel&#39;s output — or an external NDI audio source — can also be
+<strong>streamed out</strong> (RTMP / HLS / Icecast / RTP) and <strong>received</strong> back over RTP
+to a local device; see <a href="#16-audio-streaming-encoders">§16</a> and
+<a href="#17-audio-decoders-and-rtp-transport">§17</a>.</p>
+</blockquote>
 <p><img src="img/16-audio-view.png" alt="Audio view"></p>
 <p>States: <strong>Idle</strong> (grey) → <strong>Building</strong> (amber) → <strong>InDelay</strong> (green) →
 <strong>Exiting</strong> (sky) → Idle. The card shows a depth progress bar
@@ -934,12 +1022,24 @@ log</strong> streams script output and errors, colour-coded.</p>
 binds a script to a <strong>trigger</strong>: <code>manual</code>, <code>startup</code>/<code>shutdown</code>,
 <code>channelEvent</code> (EnteredBuilding/EnteredDelayed/EnteredRollingOut/
 ReturnedToLive/Dumped, optionally scoped to a channel), <code>audioEvent</code>,
-<code>encoderEvent</code>, <code>gpi</code>, <code>timer</code>, <code>schedule</code> (cron), or the data triggers.
+<code>encoderEvent</code>, <code>audioEncoderEvent</code> (an audio streaming encoder going
+Running/Down or firing a cue, <a href="#16-audio-streaming-encoders">§16</a>), <code>gpi</code> (a
+concrete LWRP device/port/pin and edge, any of them wildcarded), <code>status</code> (the GPO mapping level vocabulary — delaySafe,
+stateLive, depth deciles, censor lamps, serverAlarm — firing when it
+activates/deactivates), <code>scriptCompleted</code> (chain a script off another
+script&#39;s completion, filtered by source script and success/failure;
+loop-guarded so chains never revisit an ancestor and stop after 8 hops),
+<code>scteReceived</code> / <code>scteAired</code> (an inbound SCTE cue as it is received or as it
+reaches air, filtered by <strong>Cue type</strong> — spliceStart / spliceEnd / spliceCancel
+— and channel; <a href="#8-the-encode-option-srtscte-35">§8</a>), <code>scriptDelayed</code> (a
+one-shot armed earlier from a script by <code>air.After</code>), <code>timer</code>, <code>schedule</code>
+(cron), or the data triggers.
 The <strong>Examples</strong> dropdown inserts a worked, compile-tested starting point
 per language — timer + persistent counter, cron schedule, delay status
-watchdog, GPI dump-all, parsing JSON/XML/binary payloads from data
-receivers (also collected in
-<a href="../scripting-examples.md">docs/scripting-examples.md</a>).</p>
+watchdog, GPI dump-all, parsing JSON/XML/binary payloads from data receivers,
+and the SCTE recipes <strong>SCTE: originate cues (all operations)</strong>, <strong>SCTE:
+delay-aware ad break — arm</strong> and <strong>SCTE: delay-aware ad break — fire</strong> (also
+collected in <a href="../scripting-examples.md">docs/scripting-examples.md</a>).</p>
 <p><img src="img/35-script-editor.png" alt="Script editor"></p>
 <p><strong>Validate</strong> checks the script; <strong>Save version</strong> creates an immutable
 version, with an optional <strong>commit message</strong> stored against it. Clicking a
@@ -1011,8 +1111,11 @@ autocompletes existing variable names whenever the cursor is inside the
 string argument of <code>GetVar</code>/<code>SetVar</code>/<code>GetNumber</code>/<code>GetBool</code>/<code>DeleteVar</code>:</p>
 <p><img src="img/43-script-variables.png" alt="Persistent variables"></p>
 <p>The host API covers channel transport and status, audio-delay commands,
-encoder control, SCTE triggers, GPIO, persistent variables, logging and
-alerts. There is deliberately no sleep — use timer/schedule triggers; each
+encoder control, SCTE cue origination — including per-call overrides
+<code>air.Trigger(ch, template, {operation, preRollMs, breakDurationMs})</code> and
+<code>air.After(ms, id)</code> one-shots that fire a <code>scriptDelayed</code> trigger, audio
+streaming-encoder cue control (<code>air.AudioEncoderCue(id, &quot;out&quot;|&quot;in&quot;, seconds)</code>)
+— GPIO, persistent variables, logging and alerts. There is deliberately no sleep — use timer/schedule triggers; each
 invocation has a 1 s timeout. Lua and JavaScript are sandboxed; <strong>C# runs
 full-trust</strong> — treat it like server-side code. Full reference and examples:
 <a href="../scripting-guide.md">docs/scripting-guide.md</a>.</p>
@@ -1268,6 +1371,85 @@ the interactive API reference.</p>
 <p>Client management is admin (and master-only on a redundancy pair, though the
 clients replicate and tokens keep working on a locked backup — integrations
 survive takeover). Details of the token flow: <a href="#15-remote-control-tcp-protocol-and-rest">§15</a>.</p>
+<h3 id="139-panel-control-server--panel-control">13.9 Panel control (Server → Panel control)</h3>
+<p>Hardware panels — <strong>Elgato Stream Deck</strong> and <strong>Bitfocus Companion</strong> — drive
+delay channels directly, showing live state on their keys and firing transport
+commands with a physical press. They connect to Airlock over a <strong>dedicated
+line-delimited-JSON TCP port</strong> (default <strong>9351</strong>, separate from the automation
+TCP port in <a href="#15-remote-control-tcp-protocol-and-rest">§15</a>), and the feature
+is gated by the <strong><code>PANEL</code></strong> licence flag (<a href="#14-licensing">§14</a>).</p>
+<p><strong>Server → Panel control</strong> (admin) enables the listener and manages the
+connection tokens the panels authenticate with:</p>
+<p><img src="img/52-panel-control.png" alt="Panel control"></p>
+<p><em>(Captured on an unlicensed evaluation server, so the amber banner and the
+status-only state are showing — see the licensing note below. With the <code>PANEL</code>
+feature licensed the banner clears and panel commands are accepted.)</em></p>
+<ul>
+<li><p><strong>Enable panel listener</strong> + <strong>TCP port</strong> — turn the listener on and choose
+the port; <strong>Save</strong> applies it (<em>&quot;The listener restarts on save.&quot;</em> — no
+service restart needed, and the port must be 1–65535 and different from the
+automation TCP port). The heading pill reads <strong>listening on :9351</strong> when the
+listener is up, <strong>not listening</strong> otherwise.</p>
+</li>
+<li><p><strong>Named connection tokens</strong> — give each device or site its own token: type a
+<strong>New token label</strong> (e.g. <em>Studio 1 Stream Deck</em>) and <strong>Create token</strong>. The
+secret is shown <strong>exactly once</strong>, in a banner — <em>&quot;Token &quot;…&quot; created — copy it
+now. It is not shown again.&quot;</em> — with <strong>Copy token</strong> / <strong>Dismiss</strong>; only a
+hash is stored:</p>
+<p><img src="img/53-panel-token.png" alt="Panel token minted"></p>
+<p>Existing tokens list in a table (<strong>Label · Created · Last used</strong>) with
+<strong>Disable</strong>/<strong>Enable</strong> and <strong>Delete</strong> per row. <strong>Disabling or deleting a
+token disconnects its live panels immediately</strong> (delete confirms <em>&quot;Delete
+panel token &quot;…&quot;? Every panel using it is disconnected immediately. This
+cannot be undone.&quot;</em>), so a lost or decommissioned device is re-keyed on its
+own without disturbing the rest of the fleet. Until a token exists, <em>&quot;No
+tokens yet — panels cannot connect until one is created.&quot;</em></p>
+</li>
+<li><p><strong>Connected panels</strong> — a live table of attached panels (<strong>Client · Version ·
+Address · Token · Connected</strong>), so you can see which device used which token.</p>
+</li>
+</ul>
+<p>The token collection <strong>replicates to redundancy backups</strong> (so panels keep
+working after a takeover), while the enabled flag and port stay
+machine-local — a backup operator enables the backup&#39;s own listener. On a
+locked backup, panels still stream status but their commands are refused the
+same way the TCP surface is (exits stay live under the
+exits-only lock; <a href="#137-redundancy-primarybackup">§13.7</a>). <strong>Unlicensed</strong>, the
+listener is <em>status-only</em>: panels connect and watch state, but every command is
+refused — the modal shows <em>&quot;Panel control is not licensed — panels can connect
+and watch status, but every control is refused. Contact support to add the
+<code>PANEL</code> feature to your licence.&quot;</em></p>
+<p><strong>Setting up a panel.</strong> Both plugins are pointed at the same three things — the
+server&#39;s <strong>IP / host</strong>, the <strong>panel port</strong>, and a <strong>connection token</strong> minted
+above. In the Stream Deck app, the <strong>Airlock</strong> category offers two key types:</p>
+<p><img src="img/54-streamdeck-status.png" alt="Stream Deck — Channel status key"></p>
+<ul>
+<li><p><strong>Channel status</strong> — a live status tile. Pick the <strong>Channel</strong> and a
+<strong>Display field</strong> (<strong>State</strong>, <strong>Delay time</strong>, <strong>Censor lamp</strong> or <strong>Alarms</strong>);
+the whole key face renders the value and recolours with channel state
+(a green <strong>Live</strong>, the delay depth, an alarm lamp). The property inspector
+shows <strong>Connected to Airlock</strong> once the IP/port/token are applied.</p>
+<p><img src="img/57-streamdeck-display-field.png" alt="Stream Deck — display field"></p>
+</li>
+<li><p><strong>Channel command</strong> — a command key. Pick the <strong>Channel</strong> and a <strong>Command</strong>;
+the key doubles as a live status face. The command list is filtered to the
+channel&#39;s kind (<em>&quot;Commands are filtered to the channel&#39;s kind (video /
+audio).&quot;</em>) and covers the full transport set — <strong>Build delay</strong>, <strong>Dump</strong>,
+<strong>Dump all</strong>, <strong>Exit (jump cut / compress / rollout)</strong>, the <strong>Cough</strong> and
+<strong>Censor</strong> holds and one-shots, their post-delay variants and <strong>Force censor
+off</strong>:</p>
+<p><img src="img/55-streamdeck-command.png" alt="Stream Deck — Channel command key">
+<img src="img/56-streamdeck-commands.png" alt="Stream Deck — command list"></p>
+</li>
+</ul>
+<p>The connection fields are shared by all Airlock keys; the token box is filled
+from <strong>Server → Panel control</strong> (<em>&quot;Generated in the Airlock console: Server →
+Panel control.&quot;</em>). <strong>Bitfocus Companion</strong> carries the same surface as a module:
+a kind-filtered channel-command action, state/censor/cough/alarm/lock/licence
+feedbacks, and per-channel variables and presets. A command a panel is not
+allowed to run (unlicensed, locked backup, or illegal for the current state)
+dims on the key rather than firing. Every panel command passes the same
+state-legality gate and audit trail as the console (<code>source = panel</code>).</p>
 <h2 id="14-licensing">14. Licensing</h2>
 <p>The licensing model in one sentence: <strong>a licence buys clean outputs and
 unlimited runtime — it never gates the delay itself.</strong> BUILD, ROLLOUT and
@@ -1276,12 +1458,19 @@ watermarking and (for receivers/scripts) a runtime limit.</p>
 <p><strong>Server → License</strong> is the control panel for all of it:</p>
 <p><img src="img/38-license-panel.png" alt="License panel"></p>
 <h3 id="what-a-licence-grants">What a licence grants</h3>
-<p>Four independently licensed capabilities, carried as feature strings on the
+<p>Five independently licensed seat pools, carried as feature strings on the
 licence: <strong>video delay channels</strong> (<code>CHANNELS=n</code>), <strong>audio delay channels</strong>
-(<code>AUDIO=n</code>), <strong>video encoder seats</strong> (<code>ENCODE=n</code>, bare <code>ENCODE</code> = unlimited)
-and <strong>audio encoder seats</strong> (<code>AENCODE=n</code>) — plus boolean feature flags shown
-in the <strong>Features</strong> row. Trial licences are tagged <strong>(demo)</strong> and default to
-one video channel unless the trial carries explicit counts.</p>
+(<code>AUDIO=n</code>), <strong>video encoder seats</strong> (<code>ENCODE=n</code>, bare <code>ENCODE</code> = unlimited),
+<strong>audio streaming-encoder seats</strong> (<code>AENCODE=n</code>, <a href="#16-audio-streaming-encoders">§16</a>)
+and <strong>audio decoder seats</strong> (<code>ADECODE=n</code>, <a href="#17-audio-decoders-and-rtp-transport">§17</a>)
+— plus boolean feature flags shown in the <strong>Features</strong> row, e.g. <strong><code>PANEL</code></strong> for
+the Stream Deck / Companion panel interface
+(<a href="#139-panel-control-server--panel-control">§13.9</a>) and <strong><code>XHEAAC</code></strong> for xHE-AAC
+HLS renditions (<a href="#16-audio-streaming-encoders">§16</a>). Trial licences
+are tagged <strong>(demo)</strong> and default to one video channel unless the trial carries
+explicit counts. A licence counts as a trial only when its demo flag rides an
+<strong>enabled expiry date</strong> — a perpetual licence (no expiry) is treated as a full
+licence even if the vendor marked it demo.</p>
 <p>Two flags matter operationally: <strong>PRIMARY</strong> and <strong>BACKUP</strong> gate the
 redundancy roles (<a href="#137-redundancy-primarybackup">§13.7</a>) — and they are
 <em>enforced</em>: a role-flagged licence used under a role it doesn&#39;t permit makes
@@ -1289,7 +1478,12 @@ the whole licence invalid (banner: <em>&quot;this backup licence does not permit
 primary role — change the redundancy role or activate a matching licence&quot;</em>).
 PRIMARY covers primary and standalone; BACKUP covers backup only; a licence
 with no role flags is unrestricted. Role-flagged licences show a <strong>Licence
-role</strong> row in the panel.</p>
+role</strong> row in the panel. Activating a serial that permits <strong>only the backup
+role</strong> switches this server into the backup redundancy role as part of
+activation — the console locks and standalone/primary operation is disabled,
+and you then set the master connection on the Redundancy page
+(<a href="#137-redundancy-primarybackup">§13.7</a>); over the REST activation API this
+switch is an explicit confirm step (<code>confirmRoleSwitch</code>).</p>
 <h3 id="activation-paths">Activation paths</h3>
 <ol>
 <li><strong>Console, online</strong> — enter the serial, <strong>Activate</strong> (or <strong>Replace
@@ -1384,6 +1578,9 @@ audit trail as the UI (<code>source = tcp</code>), so e.g. <code>BUILD</code> on
 returns <code>ERR … ERR_INVALID_STATE</code>. On a synced backup, mutating verbs answer
 <code>ERR &lt;ch&gt; LOCKED …</code> (after the 14-day window expires, DUMP/DUMPALL/EXIT/
 ROLLOUT still work — everything else is refused).</p>
+<p>A separate line-delimited-JSON TCP surface serves <strong>hardware panels</strong> (Stream
+Deck / Companion) on its own token-authenticated port — see
+<a href="#139-panel-control-server--panel-control">§13.9</a>.</p>
 <h3 id="rest-oauth2-and-swagger">REST, OAuth2 and Swagger</h3>
 <p>Everything in the console is REST + JWT underneath (<code>POST /api/auth/login</code> →
 bearer token). <strong>External integrations</strong> should instead use an API client
@@ -1416,10 +1613,174 @@ redundancy <code>GET/PUT /api/redundancy</code> + <code>takeover</code>/<code>re
 <code>GET/POST/DELETE /api/users</code> + <code>POST /api/users/{id}/role</code> +
 <code>DELETE /api/users/{id}/role-override</code> (admin), ASIO discovery
 <code>GET /api/audio/devices[/{name}/channels]</code>, live mapping state
-<code>GET /api/lwrp/mappings/status</code>, <code>GET /api/audit</code>, <code>GET /api/metrics</code>,
+<code>GET /api/lwrp/mappings/status</code>, alarms <code>GET /api/alarms</code> (+
+<code>/api/alarms/history</code>), per-channel silence detection
+<code>GET/PUT /api/channels/{n}/silence-detect</code>, SCTE policy
+<code>GET/PUT /api/channels/{n}/scte-policy</code> and live block
+<code>POST /api/channels/{n}/scte-block/{on|off}</code>, alarm alert-group assignment
+<code>POST /api/channels/{n}/alarm-alert-groups</code>, alert-group webhook test
+<code>POST /api/alert-groups/{id}/webhook-test</code>, panel control
+<code>GET/POST /api/panel/tokens</code> (+ <code>POST .../{id}/enabled</code>, <code>DELETE .../{id}</code>) and
+<code>GET /api/panel/status</code>, audio streaming encoders
+<code>GET/POST /api/audio-encoders</code> (+ <code>/{id}</code> config, <code>/{id}/enable</code>,
+<code>/{id}/license</code>, <code>/{id}/status</code>, <code>/{id}/cue</code>, <code>/{id}/audio-processing</code>; codec
+profiles <code>GET /api/audio-encoders/codec-profiles</code>), audio decoders
+<code>GET/POST /api/audio-decoders</code> (+ <code>/{id}</code> config, <code>/{id}/enable</code>,
+<code>/{id}/license</code>, <code>/{id}/status</code>, <code>/{id}/audio-processing</code>), <code>GET /api/audit</code>,
+<code>GET /api/metrics</code>,
 <code>GET /api/server/status</code>. WebSockets (token via <code>?access_token=</code>) carry
 telemetry, previews, audio monitoring and the log streams.</p>
-<h2 id="16-roles-and-permissions">16. Roles and permissions</h2>
+<h2 id="16-audio-streaming-encoders">16. Audio streaming encoders</h2>
+<p>Airlock can take an audio-delay channel&#39;s output — or an <strong>external NDI audio
+source</strong> — and stream it out as <strong>AAC over RTMP or HLS</strong>, <strong>MP3 / AAC / Opus
+over Icecast/SHOUTcast</strong>, or a raw codec over <strong>RTP</strong> to another Airlock. This
+is a distinct subsystem from the video <strong>Encode option</strong> (<a href="#8-the-encode-option-srtscte-35">§8</a>):
+its own supervised child process family (<code>Airlock.AudioEncode</code>) and its own
+licence seat pool, <strong><code>AENCODE</code></strong> (<a href="#14-licensing">§14</a>). It is managed from
+<strong>Audio → Encoders</strong>.</p>
+<h3 id="the-audio-encoders-page">The Audio Encoders page</h3>
+<p><strong>Audio → Encoders</strong> lists one card per encoder; the header shows <strong>{n} / {total}
+licence seats used</strong> (<code>∞</code> when uncapped). <strong>+ Add encoder</strong> takes a name and
+<strong>Create</strong>s it; until then, <em>&quot;No audio encoders yet.&quot;</em></p>
+<p><img src="img/58-audio-encoders.png" alt="Audio Encoders page"></p>
+<p>Each card carries a status pill (<strong>disabled</strong> / <strong>running</strong> / <strong>stopped</strong>), the
+<strong>Source</strong> (<code>Audio delay ch{n}</code> or <code>NDI · {name}</code>), the <strong>Outputs</strong> summary,
+and a live status strip — <strong>Loudness</strong> (e.g. <code>−23.1 LUFS · GR 2.4 dB</code>),
+<strong>Bitrate</strong>, <strong>Outputs up</strong> (<code>{up} / {total}</code>), <strong>Restarts</strong>. An <strong>Input</strong> panel
+shows the level meter, a <strong>● receiving</strong> / <strong>● no signal</strong> indicator, a
+<strong>SILENCE</strong> pill and a <strong>Listen input</strong> tap. A licence-seat row reads
+<strong>licensed seat ✓</strong> or <strong>unlicensed</strong> with <strong>Assign seat</strong> / <strong>Release seat</strong>,
+plus <strong>Disable</strong>/<strong>Enable</strong> and <strong>Delete</strong> (confirm: <em>&quot;Delete audio encoder
+&quot;{name}&quot;? Its outputs stop immediately.&quot;</em>). An unseated encoder shows
+<strong>unlicensed · watermarked</strong> (its audio carries periodic watermark tones); on a
+redundancy backup it shows <strong>outputs suppressed</strong> — the master carries the
+sends so the plant is not double-fed.</p>
+<h3 id="source-and-codecs">Source and codecs</h3>
+<p>The cog opens the editor (<strong>Audio encoder — {name}</strong>; <strong>Save config</strong> —
+<em>&quot;Saving restarts a running encoder.&quot;</em>):</p>
+<p><img src="img/59-audio-encoder-editor.png" alt="Audio encoder editor"></p>
+<ul>
+<li><strong>Source</strong> — <strong>Input</strong> is an <strong>Audio channel</strong> (pick <code>ch{n} — {name}</code>) or an
+<strong>NDI source</strong> (pick from the finder); <strong>Channels</strong> is <code>1 (mono)</code> or
+<code>2 (stereo)</code> (<em>HE-AAC v2 renditions need a stereo source</em>).</li>
+<li><strong>Renditions</strong> — the AAC encode ladder. Each row picks a profile —
+<strong>AAC-LC</strong>, <strong>HE-AAC v1</strong>, <strong>HE-AAC v2</strong>, or <strong>xHE-AAC</strong> — a sample rate and a
+bitrate. Multiple renditions become the HLS <strong>ABR ladder</strong>. <strong>xHE-AAC (USAC)</strong>
+is <strong>HLS fMP4 only</strong> (64/96 kbps) and needs the <strong><code>XHEAAC</code></strong> codec licence —
+without it the profile shows but can&#39;t be selected.</li>
+</ul>
+<h3 id="streaming-outputs-rtmp-hls-and-icecast">Streaming outputs: RTMP, HLS and Icecast</h3>
+<p>The editor groups one fieldset per output family; each output has a name and an
+<strong>enabled</strong> toggle, and secrets are write-only (blank keeps the stored value):</p>
+<ul>
+<li><strong>RTMP outputs</strong> — a <strong>URL</strong> (<code>rtmp://host/app</code>), <strong>Stream key</strong>, optional
+<strong>Username</strong>/<strong>password</strong>, and the <strong>rendition</strong> to publish. (xHE-AAC is
+HLS-only — FLV can&#39;t carry USAC.)</li>
+<li><strong>HLS</strong> — <strong>segment (s)</strong>, <strong>window (segments)</strong>, <strong>program-date-time</strong>, and
+a <strong>container</strong>: <strong>fMP4 (modern)</strong> (CMAF <code>.m4s</code> + shared <code>init.mp4</code>, best
+player support) or <strong>ADTS (legacy)</strong> raw <code>.aac</code> segments. Publish targets are
+<strong>S3</strong>, <strong>SFTP</strong>, <strong>FTP</strong> or <strong>Local file</strong> (bucket/prefix/keys, or
+host/path/credentials, or a directory). An upload failure raises
+<code>ALARM_AENCODE_HLS</code>.</li>
+<li><strong>Icecast / SHOUTcast outputs (MP3 / AAC / Opus)</strong> — <strong>protocol</strong>
+(Icecast/SHOUTcast), <strong>codec</strong> (<strong>MP3</strong> default, <strong>AAC</strong>, or <strong>Opus</strong>),
+bitrate/sample rate, <strong>Host</strong>/<strong>port</strong>/<strong>mount</strong>, source <strong>Username</strong>/
+<strong>password</strong>, and <strong>ICY name</strong>/<strong>genre</strong>/<strong>URL</strong> with a <strong>public directory</strong>
+toggle. Disconnects raise <code>ALARM_AENCODE_ICECAST</code>.</li>
+</ul>
+<h3 id="rtp-sends-and-transport">RTP sends and transport</h3>
+<p>An encoder can also send a raw codec stream over <strong>RTP</strong> to another Airlock (or
+any RFC-compliant receiver) — the <strong>RTP sends (point-to-point)</strong> fieldset. Each
+send picks a <strong>codec</strong> and a <strong>Destination</strong> (<code>host</code> + <code>port</code>, optional
+<code>local addr</code> to bind an interface), plus <strong>TTL</strong>, <strong>MTU</strong> and <strong>payload type</strong>
+(<code>0</code> = codec default):</p>
+<p><img src="img/60-audio-encoder-rtp-send.png" alt="RTP send configuration"></p>
+<ul>
+<li><strong>Codecs</strong> — <strong>Opus</strong> (RFC 7587), <strong>AAC</strong> (RFC 3640 mpeg4-generic AAC-hbr),
+<strong>MP3</strong> (RFC 2250), or <strong>aptX</strong> (RFC 7310). Opus offers <strong>in-band FEC</strong>
+(LBRR — a low-bitrate copy of each frame rides in the next packet) with an
+<strong>expected loss %</strong>. <strong>aptX</strong> is <em>aptX-compatible</em> (Standard aptX only,
+stereo, a fixed 4:1 rate — <strong>352 kbps @44.1 k / 384 kbps @48 k</strong>) and has no
+in-band concealment, so it leans on the packet-loss protection below.</li>
+<li><strong>2022-7 secondary</strong> — duplicate the stream on a second path (<code>host</code>/<code>port</code>/
+<code>local addr</code>); the decoder merges both legs and rides whichever survives.</li>
+<li><strong>FEC (2022-1)</strong> — SMPTE 2022-1 XOR forward error correction, <strong>column</strong> or
+<strong>column + row</strong>, sized <strong>L × D</strong>; the row shows the resulting <strong>overhead</strong>
+and recovery <strong>floor</strong> in ms.</li>
+<li><strong>Multicast</strong> — there is no separate switch: enter a <strong>multicast group
+address</strong> as the destination <code>host</code> (and as the decoder&#39;s <strong>Listen address</strong>)
+and set an appropriate <strong>TTL</strong> — Airlock joins the group (IGMP) automatically
+on both ends.</li>
+</ul>
+<h3 id="cues-loudness-and-monitoring">Cues, loudness and monitoring</h3>
+<ul>
+<li><strong>Loudness (EBU R128)</strong> — <strong>loudness normalisation</strong> to a <strong>Target loudness</strong>
+(LUFS) under a <strong>True-peak ceiling</strong> (dBTP).</li>
+<li><strong>Audio processing</strong> — the same trim/EQ/compressor strip as the channels,
+<strong>In circuit</strong> / <strong>Bypassed</strong>, applied <strong>live</strong> (no encoder restart), ahead
+of the loudness chain, on this encoder&#39;s audio only.</li>
+<li><strong>Monitoring</strong> — <strong>Silence detection</strong> (threshold / hold / hysteresis /
+restore) raises <code>ALARM_AENCODE_SILENCE</code> on a dead input.</li>
+<li><strong>Cues</strong> — a manual <strong>Cue out</strong> / <strong>Cue in</strong> pair on the card marks ad breaks
+(an <code>ACUE</code> record, HLS cue tags on the stream); <strong>Cue out</strong> takes a break
+duration in seconds (<code>0</code> = open-ended until a <strong>Cue in</strong>). <strong>Auto-cue</strong>
+(editor) fires cues automatically on delay events — <strong>trigger on</strong> <code>censor or dump</code> / <code>censor</code> / <code>dump</code> — with a default duration. Scripts can drive cues
+too (<code>air.AudioEncoderCue</code>, and the <code>audioEncoderEvent</code> trigger — <a href="#12-scripting">§12</a>).</li>
+</ul>
+<h2 id="17-audio-decoders-and-rtp-transport">17. Audio decoders and RTP transport</h2>
+<p>The receive side of RTP audio. A <strong>decoder</strong> listens for an RTP stream — from
+an Airlock encoder&#39;s RTP send (<a href="#16-audio-streaming-encoders">§16</a>) or any
+RFC-compliant sender — decodes it, and plays it out on a <strong>local audio device</strong>:
+a codec return/monitor path between sites. It runs as a supervised child
+(<code>Airlock.AudioDecode</code>) with its own seat pool, <strong><code>ADECODE</code></strong>. It is managed
+from <strong>Audio → Decoders</strong>, and — unlike the outward emitters — a decoder
+<strong>keeps running on a locked redundancy backup</strong> (it only consumes from the
+network and drives a local soundcard, a warm monitor feed).</p>
+<h3 id="playback-devices-and-seats">Playback devices and seats</h3>
+<p><strong>Audio → Decoders</strong> lists one card per decoder (<strong>{n} / {total} licence seats
+used</strong>; <strong>+ New decoder</strong>). Empty: <em>&quot;No audio decoders yet.&quot;</em></p>
+<p><img src="img/61-audio-decoders.png" alt="Audio Decoders page"></p>
+<p>The card shows a state pill — <strong>Playing</strong>, <strong>Prebuffering</strong>, <strong>Starting</strong>,
+<strong>StreamLost</strong> or <strong>Disabled</strong> — an info line (<code>udp :{port}</code>, <code> +2022-7 :{port}</code>
+when a second leg is configured, <code> · {codec} {n}k</code>, <code> · fec col+row</code>), the
+<strong>Device</strong> (<code>{backend} · {name}</code>), and a status strip: <strong>Jitter buffer</strong>
+(<code>{n} / {n} ms</code>), <strong>Bitrate</strong>, <strong>Concealed</strong>, <strong>Restarts</strong>. Badges flag trouble
+— <strong>DOWN</strong> (child down, <code>ALARM_ADECODE_DOWN</code>), <strong>STREAM LOST</strong> (no RTP arriving,
+<code>ALARM_ADECODE_STREAM</code>), <strong>PATH</strong> (a 2022-7/FEC leg is dead but playout
+continues on the survivor, <code>ALARM_ADECODE_PATH</code>). The seat/enable/delete row
+matches the encoders (delete confirm: <em>&quot;Delete audio decoder &quot;{name}&quot;? Playout
+stops immediately.&quot;</em>); an unseated decoder bursts a watermark tone over its
+output.</p>
+<h3 id="the-decoder-editor">The decoder editor</h3>
+<p><strong>Audio decoder — {name}</strong>, in four groups (<strong>Save config</strong> — <em>&quot;Saving restarts
+a running decoder.&quot;</em>):</p>
+<p><img src="img/63-audio-decoder-editor.png" alt="Audio decoder editor"></p>
+<ul>
+<li><strong>Network</strong> — <strong>Listen address</strong> (blank = any; a multicast group joins it),
+<strong>port</strong> (the FEC legs ride ports +2 / +4), the <strong>2022-7 secondary</strong>
+address/port, an optional <strong>Source host</strong> filter, and <strong>FEC</strong> (none / column
+/ column + row) to match the sender.</li>
+<li><strong>Stream</strong> — <strong>Codec</strong> (Opus / AAC / MP3 / aptX), profile, <strong>payload type</strong>
+(<code>0</code> = default), <strong>Sample rate</strong>, <strong>channels</strong>, and <strong>packet time</strong> (must
+match the sender&#39;s ptime).</li>
+<li><strong>Buffering</strong> — <strong>Jitter buffer</strong> (ms) and <strong>stream lost after</strong> (ms). With
+FEC the effective jitter target is floored to the sender&#39;s matrix span
+(L × D × ptime).</li>
+<li><strong>Playout</strong> — <strong>Backend</strong> (<code>sim</code> / <code>alsa</code> / <code>asio</code>), the output <strong>device</strong> and
+channel, <strong>Device rate</strong> and <strong>buffer</strong> (frames). An <strong>Audio processing</strong>
+strip runs live on the decoded output ahead of the device.</li>
+</ul>
+<h3 id="receive-stream-diagnostics">Receive-stream diagnostics</h3>
+<p>Each card expands a <strong>Receive streams</strong> panel — a Tieline-style <em>Codec Receive
+Streams</em> table (columns <strong>Path · Received · Filtered · Last pkt</strong>) that is the
+operator&#39;s confidence surface for a resilient receive:</p>
+<p><img src="img/62-audio-decoder-receive-streams.png" alt="Receive-stream diagnostics"></p>
+<p>It counts, per path, everything that matters on a lossy or dual-path link —
+<strong>Both paths</strong> vs <strong>Only A / only B</strong>, <strong>Duplicates dropped</strong>, <strong>Reordered /
+late</strong>, <strong>Lost packets</strong>, <strong>FEC recovered (col / row)</strong>, <strong>LBRR recovered</strong>,
+<strong>Concealed</strong>, and the live <strong>Jitter depth / target</strong> — so an operator can see
+at a glance whether 2022-7 and FEC are actually earning their overhead.</p>
+<h2 id="18-roles-and-permissions">18. Roles and permissions</h2>
 <p>Roles are hierarchical: <strong>admin ⊇ operator ⊇ viewer</strong>. On a <strong>synced backup</strong>
 every operational capability is refused server-side regardless of role
 (<a href="#137-redundancy-primarybackup">§13.7</a>).</p>
@@ -1535,7 +1896,7 @@ every operational capability is refused server-side regardless of role
 <td align="center">✔</td>
 </tr>
 </tbody></table>
-<h2 id="17-alarms-and-troubleshooting">17. Alarms and troubleshooting</h2>
+<h2 id="19-alarms-and-troubleshooting">19. Alarms and troubleshooting</h2>
 <table>
 <thead>
 <tr>
@@ -1570,6 +1931,81 @@ every operational capability is refused server-side regardless of role
 <td>Supervisor restarts it; check backend/device name in the audio channel&#39;s Configure → Device tab.</td>
 </tr>
 <tr>
+<td><code>ALARM_VIDEO_SILENCE</code> / <code>ALARM_AUDIO_SILENCE</code></td>
+<td>Channel input audio stayed below the silence threshold for the hold time</td>
+<td>Restores once the level holds above threshold + hysteresis; a fully dead feed reports as source-lost instead. Tune per channel on the Alarms tab (<a href="#5-channel-configuration">§5</a>, <a href="#61-alarm-emails-webhooks-and-silence-detection">§6.1</a>).</td>
+</tr>
+<tr>
+<td><code>ALARM_SCTE_ABSOLUTE</code></td>
+<td>An absolute-time (UTC/VITC/GPI) inbound cue arrived after the delay had already outrun its splice moment</td>
+<td>Dropped or forwarded per the channel&#39;s <strong>SCTE</strong> policy (<a href="#5-channel-configuration">§5</a>).</td>
+</tr>
+<tr>
+<td><code>ALARM_SCTE_BREAK_ORPHAN</code></td>
+<td>A return (splice-in) was aired despite a block, to avoid stranding the downstream inside an open ad break</td>
+<td>Review the channel&#39;s <em>Block returns</em> policy and the <strong>Block SCTE</strong> control (<a href="#4-operating-the-delay">§4</a>, <a href="#5-channel-configuration">§5</a>).</td>
+</tr>
+<tr>
+<td><code>ALARM_SCTE_PREROLL_SHORT</code></td>
+<td>A cue reached air with less pre-roll than requested</td>
+<td>The cue still fires; downstream gets shorter warning than intended.</td>
+</tr>
+<tr>
+<td><code>ALARM_SCTE_IN_SKIP</code></td>
+<td>An inbound cue could not be placed on the delayed rail</td>
+<td>Transient; auto-clears 30 s after the last occurrence.</td>
+</tr>
+<tr>
+<td><code>ALARM_NDI_ENGINE</code></td>
+<td>The channel&#39;s NDI engine faulted</td>
+<td>Supervisor recovers it; check the source and network.</td>
+</tr>
+<tr>
+<td><code>ALARM_MEMORY_ADMISSION</code></td>
+<td>Server memory admission control limited a buffer allocation</td>
+<td>Reduce total configured delay depth across channels, or add RAM.</td>
+</tr>
+<tr>
+<td><code>ALARM_AENCODE_DOWN</code></td>
+<td>Audio streaming-encoder child not running</td>
+<td>Supervisor restarts it; check the source and outputs (<a href="#16-audio-streaming-encoders">§16</a>).</td>
+</tr>
+<tr>
+<td><code>ALARM_AENCODE_RTMP</code></td>
+<td>An RTMP output disconnected</td>
+<td>Check the ingest URL/stream key and the remote server.</td>
+</tr>
+<tr>
+<td><code>ALARM_AENCODE_HLS</code></td>
+<td>An HLS output is failing to publish</td>
+<td>Check the S3/SFTP/FTP/file target and its credentials.</td>
+</tr>
+<tr>
+<td><code>ALARM_AENCODE_ICECAST</code></td>
+<td>An Icecast/SHOUTcast output disconnected</td>
+<td>Check mount, credentials and the remote server.</td>
+</tr>
+<tr>
+<td><code>ALARM_AENCODE_SILENCE</code></td>
+<td>Audio encoder input silent past the threshold</td>
+<td>Check the source channel or NDI feed.</td>
+</tr>
+<tr>
+<td><code>ALARM_ADECODE_DOWN</code></td>
+<td>Audio decoder child not running</td>
+<td>Supervisor restarts it; check the playout device (<a href="#17-audio-decoders-and-rtp-transport">§17</a>).</td>
+</tr>
+<tr>
+<td><code>ALARM_ADECODE_STREAM</code></td>
+<td>No RTP stream arriving at the decoder</td>
+<td>Check the sender, the network, and the listen port/multicast group.</td>
+</tr>
+<tr>
+<td><code>ALARM_ADECODE_PATH</code></td>
+<td>A 2022-7 / FEC path is degraded</td>
+<td>Playout continues on the surviving leg; investigate the failed path.</td>
+</tr>
+<tr>
 <td>Ring-full / oversized-metadata alarms</td>
 <td>Buffer or metadata limits hit</td>
 <td>Buffered content is never overwritten; oversized NDI metadata (&gt;4 KB default) is dropped, not truncated.</td>
@@ -1581,11 +2017,17 @@ redundancy/lockout), the <strong>alarm strip</strong> on the affected channel ca
 the <strong>Audit table</strong> — every command and state change from every interface is
 there, including refusals and their reasons.</p>
 <hr>
-<p><em>Manual generated against Airlock as of 2026-07-12 (main @ 53a2144,
-AIR-1…132). Screenshots were captured on a live instance using the built-in
+<p><em>Manual generated against Airlock as of 2026-07-16 (main @ a281bde,
+AIR-1…190). Screenshots were captured on a live instance using the built-in
 colour-bars + tone test source; channel screenshots showing clean (unmarked)
 outputs were taken on a seated configuration — an unlicensed server
-watermarks every output as described in §14.</em></p>
+watermarks every output as described in §14. The Stream Deck plugin
+screenshots (§13.9) were supplied from the Elgato Stream Deck app. The
+audio-encoder and audio-decoder screenshots (§16, §17) were captured on an
+unlicensed evaluation server (no <code>AENCODE</code> / <code>ADECODE</code> / <code>XHEAAC</code> licence), so
+they show unlicensed/watermarked states and empty seat pools. A few screenshots
+taken in earlier cycles predate the global <strong>Alarms</strong> nav button and the Audio
+menu&#39;s <strong>Encoders</strong> / <strong>Decoders</strong> entries.</em></p>
 
 </main>
 </div>
