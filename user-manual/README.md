@@ -265,8 +265,10 @@ dashboard is view-only).
 
 **Build** is enabled only while **Live**. Press it and:
 
-- the output switches to the channel's **fill** (or freezes the last live
-  frame in freeze mode) while the buffer records the live feed;
+- the output switches to the channel's **fill** — a conformed asset, a live
+  external NDI feed ([§5](#5-channel-configuration)), or a freeze of the last
+  live frame — playing **the fill's own audio** while the buffer records the
+  live feed;
 - the state badge turns amber (**Building**) and the depth counter climbs;
 - when the delay window is reached, the channel drops into **Delayed** and the
   programme airs behind live.
@@ -390,10 +392,22 @@ and delay-mode changes are only permitted while the channel is **Live**.
 ### Fill — static assignment and dayparted schedule
 
 The static **Fill** picker offers the *ready* fill assets
-([§7](#7-fill-assets)) or **"Freeze frame (no fill — delay to time)"** to
-build against a freeze of the last live frame instead of playing fill. A fill
-must fit the channel's maximum delay depth — the server refuses an
-over-length assignment rather than risk the buffer.
+([§7](#7-fill-assets)), **"Freeze frame (no fill — delay to time)"** to
+build against a freeze of the last live frame instead of playing fill, or
+**"External NDI source (live)"**. A fill asset must fit the channel's maximum
+delay depth — the server refuses an over-length assignment rather than risk
+the buffer.
+
+**External NDI source (live)** airs a *live* NDI feed as the fill — a station
+loop or promo channel plays out (with **its own audio**) while the delay
+builds. Because a live source has no length, choosing it forces the delay
+mode to **Delay to time**. The fill source must match the channel's
+resolution and pixel format (**ALARM_FILL_FORMAT** and a held frame
+otherwise, and match its frame rate for clean audio); until it delivers,
+Build freezes the last live frame, and if it stops delivering,
+**ALARM_FILL_SOURCE_LOST** raises (self-clears on the next fill frame). The
+fill source's own health is watched from the moment it is assigned — before
+anyone presses Build.
 
 Below it, the **Dayparted fill schedule** swaps the effective fill by time of
 day and day of week — e.g. a breakfast slate on weekday mornings, the station

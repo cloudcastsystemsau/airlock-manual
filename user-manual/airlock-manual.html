@@ -443,8 +443,10 @@ dashboard is view-only).</p>
 <h3 id="build">Build</h3>
 <p><strong>Build</strong> is enabled only while <strong>Live</strong>. Press it and:</p>
 <ul>
-<li>the output switches to the channel&#39;s <strong>fill</strong> (or freezes the last live
-frame in freeze mode) while the buffer records the live feed;</li>
+<li>the output switches to the channel&#39;s <strong>fill</strong> — a conformed asset, a live
+external NDI feed (<a href="#5-channel-configuration">§5</a>), or a freeze of the last
+live frame — playing <strong>the fill&#39;s own audio</strong> while the buffer records the
+live feed;</li>
 <li>the state badge turns amber (<strong>Building</strong>) and the depth counter climbs;</li>
 <li>when the delay window is reached, the channel drops into <strong>Delayed</strong> and the
 programme airs behind live.</li>
@@ -514,9 +516,10 @@ The persistent per-channel rules live on the <strong>SCTE</strong> policy tab
 <ul>
 <li><strong>Slate</strong> — cover the output with the technical-difficulties still
 (<a href="#5-channel-configuration">§5</a>) — applied <em>after</em> the delay and censor
-stages, so <strong>both the NDI output and the encoder carry it</strong>. Click to engage
-(<strong>Slate ●</strong>, pulsing red), click again to release; it holds until released
-(no auto-timeout) and works in any state.</li>
+stages, so <strong>both the NDI output and the encoder carry it</strong>. Slate is
+engaged from GPIO, control panels or the API; while it is covering the
+output a <strong>Slate ●</strong> button (pulsing red) appears on the card — click it to
+release. It holds until released (no auto-timeout) and works in any state.</li>
 <li><strong>Censor all</strong> — engage the reaction-compensated marked-span censor and the
 immediate output censor together in one press (<strong>Censor all ●</strong> while
 engaged).</li>
@@ -550,10 +553,21 @@ for commissioning and the screenshots in this manual.</li>
 </ul>
 <h3 id="fill--static-assignment-and-dayparted-schedule">Fill — static assignment and dayparted schedule</h3>
 <p>The static <strong>Fill</strong> picker offers the <em>ready</em> fill assets
-(<a href="#7-fill-assets">§7</a>) or <strong>&quot;Freeze frame (no fill — delay to time)&quot;</strong> to
-build against a freeze of the last live frame instead of playing fill. A fill
-must fit the channel&#39;s maximum delay depth — the server refuses an
-over-length assignment rather than risk the buffer.</p>
+(<a href="#7-fill-assets">§7</a>), <strong>&quot;Freeze frame (no fill — delay to time)&quot;</strong> to
+build against a freeze of the last live frame instead of playing fill, or
+<strong>&quot;External NDI source (live)&quot;</strong>. A fill asset must fit the channel&#39;s maximum
+delay depth — the server refuses an over-length assignment rather than risk
+the buffer.</p>
+<p><strong>External NDI source (live)</strong> airs a <em>live</em> NDI feed as the fill — a station
+loop or promo channel plays out (with <strong>its own audio</strong>) while the delay
+builds. Because a live source has no length, choosing it forces the delay
+mode to <strong>Delay to time</strong>. The fill source must match the channel&#39;s
+resolution and pixel format (<strong>ALARM_FILL_FORMAT</strong> and a held frame
+otherwise, and match its frame rate for clean audio); until it delivers,
+Build freezes the last live frame, and if it stops delivering,
+<strong>ALARM_FILL_SOURCE_LOST</strong> raises (self-clears on the next fill frame). The
+fill source&#39;s own health is watched from the moment it is assigned — before
+anyone presses Build.</p>
 <p>Below it, the <strong>Dayparted fill schedule</strong> swaps the effective fill by time of
 day and day of week — e.g. a breakfast slate on weekday mornings, the station
 default otherwise:</p>
@@ -625,7 +639,8 @@ video</strong> to <strong>picture untouched</strong>, <strong>blur (pixelate)</s
 <li><strong>Slate (technical difficulties)</strong> — a still held at the channel <strong>output</strong>
 (after the delay and censor stages, so it feeds both the NDI output and the
 encoder). Choose the still (<strong>black when none</strong>) and optionally <strong>Mute
-programme audio while slated</strong>. It is engaged from the card
+programme audio while slated</strong>. It is engaged from GPIO, control panels or
+the API; while active the card shows a release button
 (<a href="#4-operating-the-delay">§4</a>).</li>
 </ul>
 <p><img src="img/71-video-masking.png" alt="Censor tab — video masking and slate"></p>
@@ -1742,9 +1757,15 @@ sends so the plant is not double-fed.</p>
 <em>&quot;Saving restarts a running encoder.&quot;</em>):</p>
 <p><img src="img/59-audio-encoder-editor.png" alt="Audio encoder editor"></p>
 <ul>
-<li><strong>Source</strong> — <strong>Input</strong> is an <strong>Audio channel</strong> (pick <code>ch{n} — {name}</code>) or an
-<strong>NDI source</strong> (pick from the finder); <strong>Channels</strong> is <code>1 (mono)</code> or
-<code>2 (stereo)</code> (<em>HE-AAC v2 renditions need a stereo source</em>).</li>
+<li><strong>Source</strong> — <strong>Input</strong> is an <strong>Audio channel</strong> (pick <code>ch{n} — {name}</code>), an
+<strong>NDI source</strong> (pick from the finder), or a <strong>Sound device</strong> — capture
+straight off a sound card with no delay channel in between: pick the
+<strong>backend</strong> (<strong>asio</strong> on Windows, <strong>alsa</strong> on Linux, <strong>sim</strong> for headless
+tests), the <strong>device</strong> (ASIO drivers and capture-capable ALSA PCMs are
+probed; free-text otherwise), the <strong>input</strong> channel pair (ASIO — named pairs
+when the driver reports them) and the capture <strong>sample rate</strong>. <strong>Channels</strong>
+is <code>1 (mono)</code> or <code>2 (stereo)</code> (<em>HE-AAC v2 renditions need a stereo source</em>)
+and doubles as the capture width for a sound-device source.</li>
 <li><strong>Renditions</strong> — the AAC encode ladder. Each row picks a profile —
 <strong>AAC-LC</strong>, <strong>HE-AAC v1</strong>, <strong>HE-AAC v2</strong>, or <strong>xHE-AAC</strong> — a sample rate and a
 bitrate. Multiple renditions become the HLS <strong>ABR ladder</strong>. <strong>xHE-AAC (USAC)</strong>
