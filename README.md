@@ -52,9 +52,9 @@ scripting API see [docs/scripting-guide.md](../scripting-guide.md).
 15. [Remote control: TCP protocol and REST](#15-remote-control-tcp-protocol-and-rest)
     - [TCP control](#tcp-control-automation-lan) · [REST, OAuth2 and Swagger](#rest-oauth2-and-swagger)
 16. [Audio streaming encoders](#16-audio-streaming-encoders)
-    - [The Audio Encoders page](#the-audio-encoders-page) · [Source & codecs](#source-and-codecs) · [RTMP / HLS / Icecast outputs](#streaming-outputs-rtmp-hls-and-icecast) · [**RTP sends & transport**](#rtp-sends-and-transport) · [Cues, loudness & monitoring](#cues-loudness-and-monitoring)
+    - [The Audio Encoders page](#the-audio-encoders-page) · [Source & codecs](#source-and-codecs) · [RTMP / HLS / Icecast outputs](#streaming-outputs-rtmp-hls-and-icecast) · [**RTP sends & transport**](#rtp-sends-and-transport) · [Cues, loudness & monitoring](#cues-loudness-and-monitoring) · [**SCTE-35 & GPIO/data carriage**](#scte-35-ad-markers)
 17. [Audio decoders and RTP transport](#17-audio-decoders-and-rtp-transport)
-    - [Playback devices & seats](#playback-devices-and-seats) · [The decoder editor](#the-decoder-editor) · [Receive-stream diagnostics](#receive-stream-diagnostics)
+    - [Playback devices & seats](#playback-devices-and-seats) · [The decoder editor](#the-decoder-editor) · [Receive-stream diagnostics](#receive-stream-diagnostics) · [**Data side-channel (GPIO & data)**](#data-side-channel-gpio-and-data-over-rtp)
 18. [Roles and permissions](#18-roles-and-permissions)
 19. [Alarms and troubleshooting](#19-alarms-and-troubleshooting)
 
@@ -901,12 +901,23 @@ messages (`⇢`), delayed releases (`⇠ released`, green) and connection events
 
 The **Routing** tab binds a receiver to a delay channel (video *or* audio;
 or "passthrough" for no delay) plus an optional fixed offset, and fans out to
-**sends**: TCP send, UDP send, or back out via an existing TCP receiver's
-connections. Queue counters show `queued · sent`, plus `dumped` — **a DUMP on
+**sends**: TCP send, UDP send, **→ RTP encoder** (ride the message out on an
+audio encoder's RTP data channel, [§16](#16-audio-streaming-encoders)), or back
+out via an existing TCP receiver's connections. Queue counters show
+`queued · sent`, plus `dumped` — **a DUMP on
 the channel cancels the queued messages from the dumped span** so suppressed
 content's metadata never leaks:
 
 ![Data routing](img/29-receivers-routing.png)
+
+The **RTP Decoders** tab (a tab on this page — not a top-nav item) surfaces the
+data carried on an audio decoder's RTP side-channel
+([§17](#17-audio-decoders-and-rtp-transport)): add an **RTP decoder feed** bound
+to a decoder, and far-end messages released in sync with the audio behave like
+any received data — firing `dataReceived`, routing and logging.
+
+![RTP Decoders tab](img/66-rtp-decoders-tab.png)
+![Routing send to an RTP encoder](img/67-data-route-rtp-encoder.png)
 
 Incoming data can also fire scripts (`dataReceived`, `dataClientEvent`,
 `dataDelayed` triggers — [§12](#12-scripting)).
@@ -1635,9 +1646,11 @@ send picks a **codec** and a **Destination** (`host` + `port`, optional
   **column + row**, sized **L × D**; the row shows the resulting **overhead**
   and recovery **floor** in ms.
 - **Multicast** — there is no separate switch: enter a **multicast group
-  address** as the destination `host` (and as the decoder's **Listen address**)
-  and set an appropriate **TTL** — Airlock joins the group (IGMP) automatically
-  on both ends.
+  address** (`239.x.x.x`) as the destination `host` (and as the decoder's
+  **Listen address**) and set an appropriate **TTL** — Airlock joins the group
+  (IGMP) automatically on both ends. On a multi-NIC host the send's **local
+  addr** also pins the egress interface, and the decoder shows a **Multicast
+  NIC** field (once its Listen address is a group) to choose the join interface.
 
 ### Cues, loudness and monitoring
 
@@ -1654,6 +1667,32 @@ send picks a **codec** and a **Destination** (`host` + `port`, optional
   (editor) fires cues automatically on delay events — **trigger on** `censor or
   dump` / `censor` / `dump` — with a default duration. Scripts can drive cues
   too (`air.AudioEncoderCue`, and the `audioEncoderEvent` trigger — [§12](#12-scripting)).
+
+### SCTE-35 ad markers
+
+Ad cues become **SCTE-35** automatically — there is nothing to configure. When a
+**Cue out** fires (manually, via **Auto-cue**, or from `air.AudioEncoderCue`),
+the encoder writes SCTE-35 signalling into its **HLS** outputs only:
+`#EXT-OATCLS-SCTE35` carrying the `splice_insert`, wrapped in `#EXT-X-CUE-OUT` /
+`#EXT-X-CUE-OUT-CONT` / `#EXT-X-CUE-IN`. A **timed** cue (duration > 0) embeds a
+CRC-valid SCTE-35 payload with a unique event id per break and a real 90 kHz PTS
+at the splice point; an **open-ended** cue (duration 0) marks the segments as a
+break without a `splice_insert`, closing on the next **Cue in**. **RTMP, Icecast
+and RTP outputs carry no cue signalling** — HLS playlists only.
+
+### Carrying GPIO and data (the RTP data channel)
+
+An RTP send can also carry **Axia GPIO states and data messages** on a
+side-channel that rides at the destination **port + 6**, timestamp-aligned with
+the audio — so tallies and now-playing data reach the far site with the same
+delay as the sound. Tick **GPIO/data channel (+6)** on the RTP send and a
+**GPIO carriage (RTP data channel)** fieldset appears: map each **slot** (0–255)
+to an LWRP **device** and **GPI port** to carry. Data messages are fed in by a
+Routing **→ RTP encoder** send ([§11](#11-data-receivers-and-delayed-data)); the
+far-end decoder replays GPIO and data aligned to playout
+([§17](#17-audio-decoders-and-rtp-transport)).
+
+![Encoder GPIO/data carriage](img/64-encoder-data-carriage.png)
 
 ## 17. Audio decoders and RTP transport
 
@@ -1695,7 +1734,9 @@ a running decoder."*):
 - **Network** — **Listen address** (blank = any; a multicast group joins it),
   **port** (the FEC legs ride ports +2 / +4), the **2022-7 secondary**
   address/port, an optional **Source host** filter, and **FEC** (none / column
-  / column + row) to match the sender.
+  / column + row) to match the sender. When the Listen address is a multicast
+  group a **Multicast NIC** field appears to pick the join interface on a
+  multi-NIC host.
 - **Stream** — **Codec** (Opus / AAC / MP3 / aptX), profile, **payload type**
   (`0` = default), **Sample rate**, **channels**, and **packet time** (must
   match the sender's ptime).
@@ -1719,6 +1760,24 @@ It counts, per path, everything that matters on a lossy or dual-path link —
 late**, **Lost packets**, **FEC recovered (col / row)**, **LBRR recovered**,
 **Concealed**, and the live **Jitter depth / target** — so an operator can see
 at a glance whether 2022-7 and FEC are actually earning their overhead.
+
+### Data side-channel: GPIO and data over RTP
+
+A decoder can receive the **GPIO/data side-channel** an encoder carries beside
+the audio ([§16](#16-audio-streaming-encoders)). Tick **GPIO/data from the
+sender (+6)** in the decoder's **Data channel** row, and a **GPO outputs (carried
+GPIO)** table appears: map each incoming **slot** and source **pin** to a local
+LWRP **device / GPO / pin**, as a **level** follow or a **pulse** (with a
+millisecond width), optionally **inverted** — so a contact closure at the origin
+studio reproduces on a relay here, in sync with the delayed audio. Data messages
+(as opposed to GPIO) surface as a virtual **RTP decoder** data receiver on the
+Data Receivers page ([§11](#11-data-receivers-and-delayed-data)). The decoder's
+**Receive streams** panel gains **Data events (rx / dup)** and **Data released /
+stale** counters while a data channel is active. GPO writes and data releases
+respect redundancy suppression — a locked backup tracks state but never fires
+the plant.
+
+![Decoder GPO release of carried GPIO](img/65-decoder-gpo-carriage.png)
 
 ## 18. Roles and permissions
 
@@ -1780,8 +1839,8 @@ there, including refusals and their reasons.
 
 ---
 
-*Manual generated against Airlock as of 2026-07-16 (main @ a281bde,
-AIR-1…190). Screenshots were captured on a live instance using the built-in
+*Manual generated against Airlock as of 2026-07-16 (main @ fb22670,
+AIR-1…195). Screenshots were captured on a live instance using the built-in
 colour-bars + tone test source; channel screenshots showing clean (unmarked)
 outputs were taken on a seated configuration — an unlicensed server
 watermarks every output as described in §14. The Stream Deck plugin
