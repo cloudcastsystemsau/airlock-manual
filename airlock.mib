@@ -1,0 +1,209 @@
+-- AIR-138: Airlock SNMP v2c agent MIB.
+--
+-- Base OID 1.3.6.1.4.1.99999.134 — 99999 is NOT a registered IANA enterprise
+-- number; it is a documented project constant (SnmpAgentService.OidRoot).
+-- Replace the arc if the product ever registers a PEN.
+--
+-- Read with the configured read community (GET/GETNEXT/GETBULK).
+-- airlockChannelCommand is the only writable object and requires the separately
+-- configured write community; SETs are refused (authorizationError) while the
+-- instance is a locked backup (AIR-106/113 control lockout).
+--
+-- Example (agent on udp/1161):
+--   snmpwalk -v2c -c public   <host>:1161 1.3.6.1.4.1.99999.134
+--   snmpget  -v2c -c public   <host>:1161 1.3.6.1.4.1.99999.134.4.0
+--   snmpset  -v2c -c <write>  <host>:1161 1.3.6.1.4.1.99999.134.10.1.12.1 i 1   -- BUILD ch1
+
+AIRLOCK-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, enterprises
+        FROM SNMPv2-SMI
+    DisplayString
+        FROM SNMPv2-TC;
+
+airlock MODULE-IDENTITY
+    LAST-UPDATED "202607130000Z"
+    ORGANIZATION "Cloudcast Systems"
+    CONTACT-INFO "https://cloudcastsystems.com"
+    DESCRIPTION  "Airlock NDI broadcast delay server: alarm + transport status,
+                  and GPIO-parity transport control (AIR-138)."
+    ::= { enterprises 99999 134 }
+
+-- ---- server scalars ---------------------------------------------------------
+
+airlockAlarmTotalCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Number of currently-active alarms across all channels."
+    ::= { airlock 1 }
+
+airlockAlarmCriticalCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Active alarms with severity critical."
+    ::= { airlock 2 }
+
+airlockAlarmWarningCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Active alarms with severity warning."
+    ::= { airlock 3 }
+
+airlockServerSeverity OBJECT-TYPE
+    SYNTAX      INTEGER { ok(0), warning(1), critical(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Worst severity across all active alarms — the single object an
+                 NMS should threshold-check."
+    ::= { airlock 4 }
+
+airlockRedundancyRole OBJECT-TYPE
+    SYNTAX      INTEGER { standalone(0), primary(1), backup(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Redundancy role of this instance (AIR-106)."
+    ::= { airlock 5 }
+
+airlockLicenseValid OBJECT-TYPE
+    SYNTAX      INTEGER { invalid(0), valid(1) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Licence validity."
+    ::= { airlock 6 }
+
+airlockWatchdogState OBJECT-TYPE
+    SYNTAX      INTEGER { standby(0), passThrough(1) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Hardware watchdog state (AIR-8)."
+    ::= { airlock 7 }
+
+-- ---- channel table ----------------------------------------------------------
+-- Index = the Airlock channel id. Video and audio delay channels share the table;
+-- audio channels read 0 for encodeRunning/watermarked, video channels read 0 for
+-- coughActive (video has censor only).
+
+airlockChannelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF AirlockChannelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "Per-channel delay status and control."
+    ::= { airlock 10 }
+
+airlockChannelEntry OBJECT-TYPE
+    SYNTAX      AirlockChannelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION "One delay channel."
+    INDEX       { airlockChannelId }
+    ::= { airlockChannelTable 1 }
+
+AirlockChannelEntry ::= SEQUENCE {
+    airlockChannelName          DisplayString,
+    airlockChannelKind          INTEGER,
+    airlockChannelState         INTEGER,
+    airlockChannelDepthMs       Integer32,
+    airlockChannelAlarmCount    Integer32,
+    airlockChannelSeverity      INTEGER,
+    airlockChannelActiveAlarms  DisplayString,
+    airlockChannelCensorActive  INTEGER,
+    airlockChannelCoughActive   INTEGER,
+    airlockChannelEncodeRunning INTEGER,
+    airlockChannelWatermarked   INTEGER,
+    airlockChannelCommand       INTEGER
+}
+
+airlockChannelName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Channel display name."
+    ::= { airlockChannelEntry 1 }
+
+airlockChannelKind OBJECT-TYPE
+    SYNTAX      INTEGER { video(0), audio(1) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Delay channel kind."
+    ::= { airlockChannelEntry 2 }
+
+airlockChannelState OBJECT-TYPE
+    SYNTAX      INTEGER { liveOrIdle(0), building(1), delayed(2), exiting(3) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Delay state. Video: Live/Building/Delayed/RollingOut; audio:
+                 Idle/Building/InDelay/Exiting — same ordinal meaning."
+    ::= { airlockChannelEntry 3 }
+
+airlockChannelDepthMs OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Current delay depth in milliseconds."
+    ::= { airlockChannelEntry 4 }
+
+airlockChannelAlarmCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Active alarms on this channel."
+    ::= { airlockChannelEntry 5 }
+
+airlockChannelSeverity OBJECT-TYPE
+    SYNTAX      INTEGER { ok(0), warning(1), critical(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Worst active alarm severity on this channel."
+    ::= { airlockChannelEntry 6 }
+
+airlockChannelActiveAlarms OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Comma-separated active alarm codes (e.g. ALARM_SOURCE_LOST)."
+    ::= { airlockChannelEntry 7 }
+
+airlockChannelCensorActive OBJECT-TYPE
+    SYNTAX      INTEGER { inactive(0), active(1) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Censor span held open or queued to air."
+    ::= { airlockChannelEntry 8 }
+
+airlockChannelCoughActive OBJECT-TYPE
+    SYNTAX      INTEGER { inactive(0), active(1) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Cough held (audio channels; always 0 on video)."
+    ::= { airlockChannelEntry 9 }
+
+airlockChannelEncodeRunning OBJECT-TYPE
+    SYNTAX      INTEGER { no(0), yes(1) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Encoder child running (video channels with the encode option)."
+    ::= { airlockChannelEntry 10 }
+
+airlockChannelWatermarked OBJECT-TYPE
+    SYNTAX      INTEGER { no(0), yes(1) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Unlicensed watermark active on the delay output (AIR-92)."
+    ::= { airlockChannelEntry 11 }
+
+airlockChannelCommand OBJECT-TYPE
+    SYNTAX      INTEGER { none(0), build(1), dump(2), dumpAll(3), exit(4),
+                          coughOn(5), coughOff(6), censorOn(7), censorOff(8) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "Transport control, mirroring the Axia GPIO command set
+                 (AIR-99..102). Reads 0. SET requires the write community;
+                 refused while the instance is a locked backup. coughOn/Off are
+                 audio-only; video maps dumpAll to dump."
+    ::= { airlockChannelEntry 12 }
+
+END
