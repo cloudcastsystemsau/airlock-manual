@@ -144,11 +144,14 @@
 <a class="toc-h3" href="#delayed--the-protection-window">Delayed — the protection window</a>
 <a class="toc-h3" href="#censor--bleep-without-dumping">Censor — bleep without dumping</a>
 <a class="toc-h3" href="#blocking-scte-cues">Blocking SCTE cues</a>
+<a class="toc-h3" href="#slate-and-combined-censor">Slate and combined censor</a>
 <a class="toc-h3" href="#simulating-source-loss-engine-sim">Simulating source loss (engine-sim)</a>
 <a class="toc-h2" href="#5-channel-configuration">5. Channel configuration</a>
 <a class="toc-h3" href="#source--name">Source &amp; name</a>
 <a class="toc-h3" href="#fill--static-assignment-and-dayparted-schedule">Fill — static assignment and dayparted schedule</a>
 <a class="toc-h3" href="#delay-mode">Delay mode</a>
+<a class="toc-h3" href="#lock-to-channel-follow-a-leader">Lock to channel (follow a leader)</a>
+<a class="toc-h3" href="#transition-fades">Transition fades</a>
 <a class="toc-h3" href="#censor-parameters">Censor parameters</a>
 <a class="toc-h3" href="#scte-policy">SCTE policy</a>
 <a class="toc-h3" href="#alarms">Alarms</a>
@@ -203,8 +206,11 @@
 <a class="toc-h3" href="#the-decoder-editor">The decoder editor</a>
 <a class="toc-h3" href="#receive-stream-diagnostics">Receive-stream diagnostics</a>
 <a class="toc-h3" href="#data-side-channel-gpio-and-data-over-rtp">Data side-channel: GPIO and data over RTP</a>
-<a class="toc-h2" href="#18-roles-and-permissions">18. Roles and permissions</a>
-<a class="toc-h2" href="#19-alarms-and-troubleshooting">19. Alarms and troubleshooting</a>
+<a class="toc-h2" href="#18-video-decoders">18. Video decoders</a>
+<a class="toc-h3" href="#the-video-decoders-page">The Video Decoders page</a>
+<a class="toc-h3" href="#the-video-decoder-editor">The video decoder editor</a>
+<a class="toc-h2" href="#19-roles-and-permissions">19. Roles and permissions</a>
+<a class="toc-h2" href="#20-alarms-and-troubleshooting">20. Alarms and troubleshooting</a>
 </nav>
 <main>
 <h1>Airlock User Manual</h1>
@@ -374,10 +380,10 @@ changes state. It is banded into <strong>Input / output video</strong> (one tile
 channel: state badge, source line, input/output previews, meters, compact
 Depth/Drops/Holds counters, alarm strip), <strong>Encoder video</strong> (one tile per
 enabled encoder with its live preview and stats), <strong>Audio</strong> (one tile per
-audio channel with its depth bar and meters) and <strong>Audit</strong> (the latest 25
-audit rows, refreshed every 3 s — every command from every interface lands
-here). Clicking any tile jumps to the owning control page and highlights the
-card.</p>
+audio channel with its depth bar and meters). Clicking any tile jumps to the
+owning control page and highlights the card. (The audit log has moved off the
+dashboard to its own page — <strong>Server → Audit log</strong>,
+<a href="#135-audit-and-backup">§13.5</a>.)</p>
 <p><img src="img/02-operations-dashboard.png" alt="Operations dashboard"></p>
 <h3 id="video--delay-channels--the-video-console">Video → Delay channels — the video console</h3>
 <p>The control surface lives on <strong>Video → Delay channels</strong>: the full channel
@@ -415,7 +421,7 @@ appear while live:</p>
 (splices inserted).</p>
 </li>
 <li><p><strong>Alarm strip</strong> — active alarms in red, e.g. <code>ALARM_SOURCE_LOST</code>
-(<a href="#19-alarms-and-troubleshooting">§19</a>).</p>
+(<a href="#20-alarms-and-troubleshooting">§20</a>).</p>
 </li>
 <li><p><strong>Transport buttons</strong> — Build / Roll out / Dump / Trigger ad break
 (<a href="#4-operating-the-delay">§4</a>).</p>
@@ -503,6 +509,20 @@ pulses red while engaged. It respects the same safety rule as the policy tab:
 airs</em>. Blocked cues are still decoded, counted, audited and still fire scripts.
 The persistent per-channel rules live on the <strong>SCTE</strong> policy tab
 (<a href="#5-channel-configuration">§5</a>).</p>
+<h3 id="slate-and-combined-censor">Slate and combined censor</h3>
+<p>Two more controls sit in the video card&#39;s action row:</p>
+<ul>
+<li><strong>Slate</strong> — cover the output with the technical-difficulties still
+(<a href="#5-channel-configuration">§5</a>) — applied <em>after</em> the delay and censor
+stages, so <strong>both the NDI output and the encoder carry it</strong>. Click to engage
+(<strong>Slate ●</strong>, pulsing red), click again to release; it holds until released
+(no auto-timeout) and works in any state.</li>
+<li><strong>Censor all</strong> — engage the reaction-compensated marked-span censor and the
+immediate output censor together in one press (<strong>Censor all ●</strong> while
+engaged).</li>
+</ul>
+<p>A channel <strong>locked to a leader</strong> (<a href="#5-channel-configuration">§5</a>) shows all
+these transport buttons disabled — every control follows the leader instead.</p>
 <h3 id="simulating-source-loss-engine-sim">Simulating source loss (engine-sim)</h3>
 <p>Without the NDI runtime, channels run against a synthetic source and admins
 get <strong>Kill sim source / Restore sim source</strong> buttons to rehearse the
@@ -561,6 +581,26 @@ plays once and freezes its last frame, silent, until the window is
 reached.</li>
 <li>Changes <strong>Apply</strong> while Live and take effect at the next Build.</li>
 </ul>
+<h3 id="lock-to-channel-follow-a-leader">Lock to channel (follow a leader)</h3>
+<p>A delay channel can be <strong>locked to follow another channel</strong> (the <em>leader</em>).
+While locked it <strong>refuses all controls</strong> — console, REST, TCP, panels, GPIO and
+scripts — and instead mirrors the leader&#39;s Build / Roll out / Dump / Censor
+commands, so a pair of channels protect in lock-step. Set it in the <strong>Delay
+mode</strong> tab (audio channels: Configure → <strong>Delay &amp; build</strong>): pick the leader from
+<strong>Lock to channel</strong> (default <strong>— not locked —</strong>) and <strong>Apply</strong>. If the two
+delay lengths differ the panel warns — <em>&quot;Delay lengths differ … The lock mirrors
+commands only, so the two delay depths will not match.&quot;</em> A locked card shows a
+<strong>LOCKED → ch{n}</strong> badge with its controls disabled everywhere; unlock here to
+regain control. (Chains are refused — you cannot lock to a channel that is
+itself locked.)</p>
+<h3 id="transition-fades">Transition fades</h3>
+<p>By default the picture cuts hard where delay states meet. <strong>Transition fades</strong>
+replace those seams with a dissolve and a matching audio ramp at <strong>Build start</strong>
+(live → fill), <strong>Build end</strong> (fill → delayed programme) and <strong>Rollout end</strong>
+(delayed → live) — each independently enabled with a duration in <strong>ms</strong>
+(20–10000). The rollout content jump itself is unchanged, and a <strong>DUMP always
+cuts hard</strong>. <strong>Save fades</strong> applies live.</p>
+<p><img src="img/70-channel-lock.png" alt="Delay mode tab — channel lock and transition fades"></p>
 <h3 id="censor-parameters">Censor parameters</h3>
 <p>The Censor tab tunes the reaction-time compensation behind the card&#39;s Censor
 buttons (<a href="#4-operating-the-delay">§4</a>):</p>
@@ -575,7 +615,20 @@ reaction-time back-date; default 500).</li>
 (default 300).</li>
 <li><strong>Hold timeout (ms, 0 = off)</strong> — auto-release a censor whose off never
 arrives (default 30000).</li>
+<li><strong>Video masking</strong> — beyond bleeping the audio, the censor can treat the
+<strong>picture</strong> over the affected span. Set <strong>Pre censor video</strong> and <strong>Post censor
+video</strong> to <strong>picture untouched</strong>, <strong>blur (pixelate)</strong> (with a <strong>Blur strength
+(block px)</strong>), <strong>black</strong>, or a <strong>still image</strong> (from the fills library).</li>
 </ul>
+<p>The same Censor tab configures the output <strong>slate</strong>:</p>
+<ul>
+<li><strong>Slate (technical difficulties)</strong> — a still held at the channel <strong>output</strong>
+(after the delay and censor stages, so it feeds both the NDI output and the
+encoder). Choose the still (<strong>black when none</strong>) and optionally <strong>Mute
+programme audio while slated</strong>. It is engaged from the card
+(<a href="#4-operating-the-delay">§4</a>).</li>
+</ul>
+<p><img src="img/71-video-masking.png" alt="Censor tab — video masking and slate"></p>
 <h3 id="scte-policy">SCTE policy</h3>
 <p>Video channels carry SCTE-104 cues from the source through the delay and
 re-emit them (see <a href="#inbound-scte--cue-pass-through-and-conversion">inbound SCTE</a>
@@ -756,8 +809,21 @@ delay</strong>. Raster and framerate lock from the source&#39;s first frame (the
 encoder restarts once when they differ from the last known format).</li>
 <li><strong>Video / transport</strong> — GStreamer encoder element with presets <strong>NVENC</strong>
 (hardware), <strong>OpenH264</strong>, <strong>x264</strong> (software), or any custom element string;
-deinterlace; output resolution; <strong>SRT mode</strong> (listener or caller + host),
-port, latency, optional AES passphrase (write-only).</li>
+deinterlace; output resolution; and the output <strong>Transport</strong>:<ul>
+<li><strong>SRT</strong> (the default) — mode (listener or caller + host), port, latency,
+optional AES passphrase (write-only), and an optional <strong>FEC (packet
+filter)</strong> — libsrt&#39;s XOR packet filter (e.g. <code>fec,cols:10,rows:5</code>) for
+high-RTT one-way links; the receiving decoder must pass a matching
+<code>packetfilter=fec</code>.</li>
+<li><strong>UDP (plain MPEG-TS)</strong> — raw 1316-byte TS datagrams to a unicast host or
+multicast group (with a multicast TTL). Use this to hand the feed to a
+plant mux, an analyzer, or a co-located <strong>Zixi Feeder / ZEC</strong>, which
+ingests UDP TS and originates the Zixi protocol upstream. (Sites with a
+Zixi Broadcaster can instead point an SRT <em>caller</em> output at the
+Broadcaster&#39;s SRT input.) SCTE-35 is inserted at the TS mux, so cues
+ride either transport unchanged.</li>
+</ul>
+</li>
 <li><strong>Loudness (EBU R128)</strong> — audio encoder element (FDK-AAC / AAC (LGPL) /
 MP2 presets), target loudness (−23 LUFS EBU / −24 ATSC) with a true-peak
 ceiling; a loudness servo and limiter keep the feed compliant, and A/V
@@ -1035,8 +1101,10 @@ binds a script to a <strong>trigger</strong>: <code>manual</code>, <code>startup
 <code>channelEvent</code> (EnteredBuilding/EnteredDelayed/EnteredRollingOut/
 ReturnedToLive/Dumped, optionally scoped to a channel), <code>audioEvent</code>,
 <code>encoderEvent</code>, <code>audioEncoderEvent</code> (an audio streaming encoder going
-Running/Down or firing a cue, <a href="#16-audio-streaming-encoders">§16</a>), <code>gpi</code> (a
-concrete LWRP device/port/pin and edge, any of them wildcarded), <code>status</code> (the GPO mapping level vocabulary — delaySafe,
+Running/Down or firing a cue, <a href="#16-audio-streaming-encoders">§16</a>),
+<code>videoDecoderEvent</code> (a video decoder going Running/Down/StreamLost,
+<a href="#18-video-decoders">§18</a>), <code>gpi</code> (a concrete LWRP device/port/pin and edge,
+any of them wildcarded), <code>status</code> (the GPO mapping level vocabulary — delaySafe,
 stateLive, depth deciles, censor lamps, serverAlarm — firing when it
 activates/deactivates), <code>scriptCompleted</code> (chain a script off another
 script&#39;s completion, filtered by source script and success/failure;
@@ -1327,11 +1395,12 @@ replicate to redundancy backups.</li>
 </ul>
 <p><img src="img/40-change-password.png" alt="Change password"></p>
 <h3 id="135-audit-and-backup">13.5 Audit and backup</h3>
-<p>The audit log is append-only and viewable at the bottom of Operations (full
-history via <code>GET /api/audit?from&amp;to&amp;ch&amp;skip&amp;take</code>). A checkpointed copy of
-the configuration database can be downloaded by admins from
-<code>GET /api/server/backup</code> (API-only).</p>
-<p><img src="img/15-audit.png" alt="Audit table"></p>
+<p>The audit log is append-only and has its own page — <strong>Server → Audit log</strong> —
+listing the most recent control actions (<strong>Time · Channel · Action · Source ·
+Detail</strong>, newest first); the full history is available via
+<code>GET /api/audit?from&amp;to&amp;ch&amp;skip&amp;take</code>. A checkpointed copy of the configuration
+database can be downloaded by admins from <code>GET /api/server/backup</code> (API-only).</p>
+<p><img src="img/15-audit.png" alt="Server → Audit log"></p>
 <h3 id="136-watchdog">13.6 Watchdog</h3>
 <p>A separate watchdog process monitors the server&#39;s heartbeat and can take over
 the NDI output names in a failover pair <strong>on the same host</strong>. Its state shows
@@ -1470,11 +1539,12 @@ watermarking and (for receivers/scripts) a runtime limit.</p>
 <p><strong>Server → License</strong> is the control panel for all of it:</p>
 <p><img src="img/38-license-panel.png" alt="License panel"></p>
 <h3 id="what-a-licence-grants">What a licence grants</h3>
-<p>Five independently licensed seat pools, carried as feature strings on the
+<p>Six independently licensed seat pools, carried as feature strings on the
 licence: <strong>video delay channels</strong> (<code>CHANNELS=n</code>), <strong>audio delay channels</strong>
 (<code>AUDIO=n</code>), <strong>video encoder seats</strong> (<code>ENCODE=n</code>, bare <code>ENCODE</code> = unlimited),
-<strong>audio streaming-encoder seats</strong> (<code>AENCODE=n</code>, <a href="#16-audio-streaming-encoders">§16</a>)
-and <strong>audio decoder seats</strong> (<code>ADECODE=n</code>, <a href="#17-audio-decoders-and-rtp-transport">§17</a>)
+<strong>audio streaming-encoder seats</strong> (<code>AENCODE=n</code>, <a href="#16-audio-streaming-encoders">§16</a>),
+<strong>audio decoder seats</strong> (<code>ADECODE=n</code>, <a href="#17-audio-decoders-and-rtp-transport">§17</a>)
+and <strong>video decoder seats</strong> (<code>VDECODE=n</code>, <a href="#18-video-decoders">§18</a>)
 — plus boolean feature flags shown in the <strong>Features</strong> row, e.g. <strong><code>PANEL</code></strong> for
 the Stream Deck / Companion panel interface
 (<a href="#139-panel-control-server--panel-control">§13.9</a>) and <strong><code>XHEAAC</code></strong> for xHE-AAC
@@ -1832,7 +1902,57 @@ stale</strong> counters while a data channel is active. GPO writes and data rele
 respect redundancy suppression — a locked backup tracks state but never fires
 the plant.</p>
 <p><img src="img/65-decoder-gpo-carriage.png" alt="Decoder GPO release of carried GPIO"></p>
-<h2 id="18-roles-and-permissions">18. Roles and permissions</h2>
+<h2 id="18-video-decoders">18. Video decoders</h2>
+<p>Where the encode option (<a href="#8-the-encode-option-srtscte-35">§8</a>) <em>sends</em> a
+contribution feed, a <strong>video decoder</strong> does the reverse: it <strong>receives</strong> an SRT
+or UDP MPEG-TS stream, decodes the video (<strong>H.264/AVC</strong> or <strong>H.265/HEVC</strong>) and
+optional <strong>AAC</strong> audio, and republishes it as an <strong>NDI source</strong> on the LAN — so
+a remote contribution arrives on the network ready for a delay channel or any
+NDI destination. It can also relay inbound <strong>SCTE-35</strong> ad markers into the NDI
+VANC as <strong>SCTE-104</strong>, which a downstream Airlock delay channel then ingests
+(<a href="#5-channel-configuration">§5</a>). Decoders run as supervised children
+(<code>Airlock.Decode</code>) with their own licence seat pool, <strong><code>VDECODE</code></strong>
+(<a href="#14-licensing">§14</a>), and are managed from <strong>Video → Decoders</strong>.</p>
+<h3 id="the-video-decoders-page">The Video Decoders page</h3>
+<p>The page lists one card per decoder with <strong>{n} / {total} licence seats used</strong>
+(<code>∞</code> when uncapped) and <strong>+ New decoder</strong>. Empty: <em>&quot;No video decoders yet.&quot;</em></p>
+<p><img src="img/68-video-decoders.png" alt="Video Decoders page"></p>
+<p>Each card shows a state pill — <strong>Receiving</strong>, <strong>Connecting</strong>, <strong>Starting</strong>,
+<strong>StreamLost</strong> or <strong>Disabled</strong> — the transport line (<code>srt {host}:{port}</code> /
+<code>srt listen :{port}</code> / <code>udp {addr}:{port}</code>, the codec, <code>+aac</code> when audio is on),
+the <strong>NDI</strong> output name, and a status strip: <strong>Picture</strong> (<code>{w}×{h}@{fps}</code>),
+<strong>Decode</strong> (<code>{n} fps</code>), <strong>Audio</strong> (<code>{n} kHz {ch}ch</code>) and <strong>Restarts</strong>
+(<code>{n} / {n} redials</code>). A collapsible <strong>SCTE-35 → 104</strong> panel counts <strong>Sections
+seen</strong>, <strong>Converted / emitted</strong>, <strong>Repeats dropped</strong>, <strong>Skipped
+(time_signal…)</strong>, <strong>CRC errors</strong> and <strong>Short pre-rolls (&lt;4 s)</strong>. Badges flag
+<strong>DOWN</strong> (<code>ALARM_VDECODE_DOWN</code>) and <strong>STREAM LOST</strong> (<code>ALARM_VDECODE_STREAM</code>); an
+unseated decoder publishes <strong>unlicensed · watermarked</strong>. The seat / enable /
+delete row matches the encoders (delete confirm: <em>&quot;Delete video decoder
+&quot;{name}&quot;? The NDI source disappears immediately.&quot;</em>).</p>
+<h3 id="the-video-decoder-editor">The video decoder editor</h3>
+<p><strong>Video decoder — {name}</strong> (<strong>Save config</strong> — <em>&quot;Saving restarts a running
+decoder.&quot;</em>):</p>
+<p><img src="img/69-video-decoder-editor.png" alt="Video decoder editor"></p>
+<ul>
+<li><strong>NDI source name</strong> — what the decoded feed is published as on the LAN.</li>
+<li><strong>Transport</strong> — <strong>SRT</strong> or <strong>UDP TS</strong> (<em>&quot;plain MPEG-TS — unicast, multicast,
+or a co-located Zixi Receiver&#39;s handoff&quot;</em>). <strong>UDP input</strong>: an <strong>Address</strong> (a
+224–239.x group joins it) + <strong>port</strong>, with a <strong>Multicast NIC</strong> for the join on
+a multi-NIC host. <strong>SRT input</strong>: <strong>Mode</strong> (<strong>caller — dial the sender</strong> /
+<strong>listener — the sender dials us</strong>), <strong>host</strong>, <strong>port</strong>, <strong>Latency (ms)</strong>,
+<strong>stream id</strong>, and an optional <strong>Passphrase</strong> (AES, 10–79 chars) with a
+<strong>key</strong> length (<strong>AES-128 / 192 / 256</strong>). Match the encoder&#39;s <strong>FEC (packet
+filter)</strong> here when one is set (<a href="#8-the-encode-option-srtscte-35">§8</a>).</li>
+<li><strong>Stream</strong> — <strong>Video codec</strong> (<strong>H.264 / AVC</strong> or <strong>H.265 / HEVC</strong> — must match
+the sender), a <strong>Program</strong> number (<code>0</code> = first in the PAT), an <strong>Audio</strong>
+toggle (<em>&quot;decode AAC audio to the NDI source&quot;</em>), and <strong>SCTE-35 → 104</strong>
+(<em>&quot;re-emit ad markers in NDI VANC&quot;</em>).</li>
+</ul>
+<p>Assign a <strong><code>VDECODE</code></strong> seat to clear a decoder&#39;s watermark; unseated decoders
+publish with the burnt-in mark, flipped live like channels and encoders
+(<a href="#14-licensing">§14</a>). Scripts can react to a decoder going up or down
+(<code>videoDecoderEvent</code>, <a href="#12-scripting">§12</a>).</p>
+<h2 id="19-roles-and-permissions">19. Roles and permissions</h2>
 <p>Roles are hierarchical: <strong>admin ⊇ operator ⊇ viewer</strong>. On a <strong>synced backup</strong>
 every operational capability is refused server-side regardless of role
 (<a href="#137-redundancy-primarybackup">§13.7</a>).</p>
@@ -1948,7 +2068,7 @@ every operational capability is refused server-side regardless of role
 <td align="center">✔</td>
 </tr>
 </tbody></table>
-<h2 id="19-alarms-and-troubleshooting">19. Alarms and troubleshooting</h2>
+<h2 id="20-alarms-and-troubleshooting">20. Alarms and troubleshooting</h2>
 <table>
 <thead>
 <tr>
@@ -1976,6 +2096,11 @@ every operational capability is refused server-side regardless of role
 <td><code>ALARM_AV_OFFSET</code></td>
 <td>Encoder A/V offset beyond ±5 ms</td>
 <td>Realignment is automatic; persistent offset warrants investigation.</td>
+</tr>
+<tr>
+<td><code>ALARM_ENCODE_DOUBLE_PROC</code></td>
+<td>PGM and encoder audio processing both enabled</td>
+<td>The encoder receives the channel&#39;s processed PGM feed, so with its own processing also on the audio is processed twice. Disable one chain — the encoder&#39;s own processing is meant for the external-NDI-input case. Clears when either is turned off or the encoder input moves off the channel PGM.</td>
 </tr>
 <tr>
 <td><code>ALARM_AUDIO_DOWN</code></td>
@@ -2058,6 +2183,16 @@ every operational capability is refused server-side regardless of role
 <td>Playout continues on the surviving leg; investigate the failed path.</td>
 </tr>
 <tr>
+<td><code>ALARM_VDECODE_DOWN</code></td>
+<td>Video decoder child not running</td>
+<td>Supervisor restarts it; check the input transport and the decoder (<a href="#18-video-decoders">§18</a>).</td>
+</tr>
+<tr>
+<td><code>ALARM_VDECODE_STREAM</code></td>
+<td>No SRT/TS stream arriving at the video decoder</td>
+<td>Check the sender, the network, and the listener/caller settings.</td>
+</tr>
+<tr>
 <td>Ring-full / oversized-metadata alarms</td>
 <td>Buffer or metadata limits hit</td>
 <td>Buffered content is never overwritten; oversized NDI metadata (&gt;4 KB default) is dropped, not truncated.</td>
@@ -2066,20 +2201,22 @@ every operational capability is refused server-side regardless of role
 <p>Quick checks, in order: the <strong>footer pills</strong> (NDI runtime present? media
 tooling ready? watchdog? licence? redundancy?), the <strong>banners</strong> (licence,
 redundancy/lockout), the <strong>alarm strip</strong> on the affected channel card, then
-the <strong>Audit table</strong> — every command and state change from every interface is
-there, including refusals and their reasons.</p>
+the <strong>Server → Audit log</strong> page — every command and state change from every
+interface is there, including refusals and their reasons.</p>
 <hr>
-<p><em>Manual generated against Airlock as of 2026-07-16 (main @ fb22670,
-AIR-1…195). Screenshots were captured on a live instance using the built-in
+<p><em>Manual generated against Airlock as of 2026-07-16 (main @ 20a6bfe,
+AIR-1…214). Screenshots were captured on a live instance using the built-in
 colour-bars + tone test source; channel screenshots showing clean (unmarked)
 outputs were taken on a seated configuration — an unlicensed server
 watermarks every output as described in §14. The Stream Deck plugin
 screenshots (§13.9) were supplied from the Elgato Stream Deck app. The
 audio-encoder and audio-decoder screenshots (§16, §17) were captured on an
 unlicensed evaluation server (no <code>AENCODE</code> / <code>ADECODE</code> / <code>XHEAAC</code> licence), so
-they show unlicensed/watermarked states and empty seat pools. A few screenshots
-taken in earlier cycles predate the global <strong>Alarms</strong> nav button and the Audio
-menu&#39;s <strong>Encoders</strong> / <strong>Decoders</strong> entries.</em></p>
+they show unlicensed/watermarked states and empty seat pools. The video-decoder,
+channel-lock, transition-fade, slate and video-masking screenshots (§5, §18)
+were likewise captured unlicensed; the audit log has moved to its own <strong>Server →
+Audit log</strong> page. A few screenshots taken in earlier cycles predate the global
+<strong>Alarms</strong> nav button and the Video/Audio menus&#39; <strong>Decoders</strong> entries.</em></p>
 
 </main>
 </div>
