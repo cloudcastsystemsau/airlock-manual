@@ -1250,11 +1250,14 @@ streaming-encoder cue control (<code>air.AudioEncoderCue(id, &quot;out&quot;|&qu
 invocation has a 1 s timeout. Lua and JavaScript are sandboxed; <strong>C# runs
 full-trust</strong> — treat it like server-side code. Full reference and examples:
 <a href="../scripting-guide.md">docs/scripting-guide.md</a>.</p>
-<p><strong>Unlicensed servers</strong>: each enabled script runs for <strong>30 minutes at a
-stretch</strong>, then is disabled (audited as <code>SCRIPT_UNLICENSED_TIMEOUT</code>, with an
-alert email). Re-enabling grants another 30 minutes; a licence lifts the
-limit (<a href="#14-licensing">§14</a>). The Scripting panel shows an amber banner while
-the limit is in force.</p>
+<p><strong>Licensing</strong>: scripting is a licensed feature — the licence must carry the
+<strong><code>SCRIPTING</code></strong> flag (<a href="#14-licensing">§14</a>). Without it scripts can still be
+created and edited, but the dispatcher refuses every run (triggers, timers and
+the <strong>Run</strong> button alike) and the Scripting panel shows an amber banner.
+On <strong>unlicensed servers</strong> each enabled script additionally runs for only
+<strong>30 minutes at a stretch</strong>, then is disabled (audited as
+<code>SCRIPT_UNLICENSED_TIMEOUT</code>, with an alert email). Re-enabling grants another
+30 minutes; a licence with <code>SCRIPTING</code> lifts both limits.</p>
 <blockquote>
 <p>Note the host-call syntax in Lua is colon-style: <code>air:Log(...)</code>,
 <code>air:Build(1)</code> — while JavaScript and C# use dot-style (<code>air.Log(...)</code>).</p>
@@ -1588,20 +1591,26 @@ state-legality gate and audit trail as the console (<code>source = panel</code>)
 <p>The licensing model in one sentence: <strong>a licence buys clean outputs and
 unlimited runtime — it never gates the delay itself.</strong> BUILD, ROLLOUT and
 DUMP work identically on licensed and unlicensed servers; what changes is
-watermarking and (for receivers/scripts) a runtime limit.</p>
+watermarking, (for receivers/scripts) a runtime limit, and the feature-flagged
+surfaces (<code>PANEL</code>, <code>SCRIPTING</code>).</p>
 <p><strong>Server → License</strong> is the control panel for all of it:</p>
 <p><img src="img/38-license-panel.png" alt="License panel"></p>
 <h3 id="what-a-licence-grants">What a licence grants</h3>
 <p>Six independently licensed seat pools, carried as feature strings on the
-licence: <strong>video delay channels</strong> (<code>CHANNELS=n</code>), <strong>audio delay channels</strong>
-(<code>AUDIO=n</code>), <strong>video encoder seats</strong> (<code>ENCODE=n</code>, bare <code>ENCODE</code> = unlimited),
+licence: <strong>video delay channels</strong> (<code>VDELAY=n</code>), <strong>audio delay channels</strong>
+(<code>ADELAY=n</code>), <strong>video encoder seats</strong> (<code>VENCODE=n</code>, bare <code>VENCODE</code> = unlimited),
 <strong>audio streaming-encoder seats</strong> (<code>AENCODE=n</code>, <a href="#16-audio-streaming-encoders">§16</a>),
 <strong>audio decoder seats</strong> (<code>ADECODE=n</code>, <a href="#17-audio-decoders-and-rtp-transport">§17</a>)
 and <strong>video decoder seats</strong> (<code>VDECODE=n</code>, <a href="#18-video-decoders">§18</a>)
-— plus boolean feature flags shown in the <strong>Features</strong> row, e.g. <strong><code>PANEL</code></strong> for
+— plus boolean feature flags shown in the <strong>Features</strong> row: <strong><code>PANEL</code></strong> for
 the Stream Deck / Companion panel interface
-(<a href="#139-panel-control-server--panel-control">§13.9</a>) and <strong><code>XHEAAC</code></strong> for xHE-AAC
-HLS renditions (<a href="#16-audio-streaming-encoders">§16</a>). Trial licences
+(<a href="#139-panel-control-server--panel-control">§13.9</a>), <strong><code>SCRIPTING</code></strong> for the
+scripting engine (<a href="#12-scripting">§12</a>) — without it scripts can be edited but
+never run — and <strong><code>XHEAAC</code></strong> for xHE-AAC
+HLS renditions (<a href="#16-audio-streaming-encoders">§16</a>). Licences issued before
+the canonical names (<code>CHANNELS=n</code>, <code>AUDIO=n</code>, <code>ENCODE=n</code>) keep working — the
+old tokens are accepted as synonyms and shown under their canonical names.
+Trial licences
 are tagged <strong>(demo)</strong> and default to one video channel unless the trial carries
 explicit counts. A licence counts as a trial only when its demo flag rides an
 <strong>enabled expiry date</strong> — a perpetual licence (no expiry) is treated as a full

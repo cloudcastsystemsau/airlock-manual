@@ -1158,11 +1158,14 @@ invocation has a 1 s timeout. Lua and JavaScript are sandboxed; **C# runs
 full-trust** — treat it like server-side code. Full reference and examples:
 [docs/scripting-guide.md](../scripting-guide.md).
 
-**Unlicensed servers**: each enabled script runs for **30 minutes at a
-stretch**, then is disabled (audited as `SCRIPT_UNLICENSED_TIMEOUT`, with an
-alert email). Re-enabling grants another 30 minutes; a licence lifts the
-limit ([§14](#14-licensing)). The Scripting panel shows an amber banner while
-the limit is in force.
+**Licensing**: scripting is a licensed feature — the licence must carry the
+**`SCRIPTING`** flag ([§14](#14-licensing)). Without it scripts can still be
+created and edited, but the dispatcher refuses every run (triggers, timers and
+the **Run** button alike) and the Scripting panel shows an amber banner.
+On **unlicensed servers** each enabled script additionally runs for only
+**30 minutes at a stretch**, then is disabled (audited as
+`SCRIPT_UNLICENSED_TIMEOUT`, with an alert email). Re-enabling grants another
+30 minutes; a licence with `SCRIPTING` lifts both limits.
 
 > Note the host-call syntax in Lua is colon-style: `air:Log(...)`,
 > `air:Build(1)` — while JavaScript and C# use dot-style (`air.Log(...)`).
@@ -1480,7 +1483,8 @@ state-legality gate and audit trail as the console (`source = panel`).
 The licensing model in one sentence: **a licence buys clean outputs and
 unlimited runtime — it never gates the delay itself.** BUILD, ROLLOUT and
 DUMP work identically on licensed and unlicensed servers; what changes is
-watermarking and (for receivers/scripts) a runtime limit.
+watermarking, (for receivers/scripts) a runtime limit, and the feature-flagged
+surfaces (`PANEL`, `SCRIPTING`).
 
 **Server → License** is the control panel for all of it:
 
@@ -1489,15 +1493,20 @@ watermarking and (for receivers/scripts) a runtime limit.
 ### What a licence grants
 
 Six independently licensed seat pools, carried as feature strings on the
-licence: **video delay channels** (`CHANNELS=n`), **audio delay channels**
-(`AUDIO=n`), **video encoder seats** (`ENCODE=n`, bare `ENCODE` = unlimited),
+licence: **video delay channels** (`VDELAY=n`), **audio delay channels**
+(`ADELAY=n`), **video encoder seats** (`VENCODE=n`, bare `VENCODE` = unlimited),
 **audio streaming-encoder seats** (`AENCODE=n`, [§16](#16-audio-streaming-encoders)),
 **audio decoder seats** (`ADECODE=n`, [§17](#17-audio-decoders-and-rtp-transport))
 and **video decoder seats** (`VDECODE=n`, [§18](#18-video-decoders))
-— plus boolean feature flags shown in the **Features** row, e.g. **`PANEL`** for
+— plus boolean feature flags shown in the **Features** row: **`PANEL`** for
 the Stream Deck / Companion panel interface
-([§13.9](#139-panel-control-server--panel-control)) and **`XHEAAC`** for xHE-AAC
-HLS renditions ([§16](#16-audio-streaming-encoders)). Trial licences
+([§13.9](#139-panel-control-server--panel-control)), **`SCRIPTING`** for the
+scripting engine ([§12](#12-scripting)) — without it scripts can be edited but
+never run — and **`XHEAAC`** for xHE-AAC
+HLS renditions ([§16](#16-audio-streaming-encoders)). Licences issued before
+the canonical names (`CHANNELS=n`, `AUDIO=n`, `ENCODE=n`) keep working — the
+old tokens are accepted as synonyms and shown under their canonical names.
+Trial licences
 are tagged **(demo)** and default to one video channel unless the trial carries
 explicit counts. A licence counts as a trial only when its demo flag rides an
 **enabled expiry date** — a perpetual licence (no expiry) is treated as a full
